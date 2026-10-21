@@ -155,7 +155,7 @@
   const inOut = t => (1 - Math.cos(Math.PI * t)) / 2;   // sine ease: its fastest moment is only ~1.6× the average pace (a cubic peaks at 3×)
   // How long each step takes, by the distance the camera travels: up to the English verse, through the doorway into the hall
   // (the longest walk, and the one that felt rushed), the two hall stops, and out into the daylight.
-  const STEP_MS = [3500, 7000, 4500, 4500, 6000];
+  const STEP_MS = [2800, 5600, 3600, 3600, 4800];
   let walk = 0, walkTo = -1;   // walk: the running walk's id (0 when still); walkTo: the stop it is heading for
   const walkToStop = (i, after) => {
     i = clamp(i, 0, STOPS.length - 1);
