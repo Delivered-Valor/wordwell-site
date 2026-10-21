@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WordWell crown W mark (SIZE-137). Geometry from docs/design/app-icon/source/wordwell-mark-crown.svg, coloured bronze for the site. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+ <rect width="1024" height="1024" rx="230" fill="#E3DED4"/>
+ <g id="crown" fill="#9A7B48">
+  <path d="M 178.00 306.00 L 332.00 744.00 L 449.21 421.97 A 66.82 66.82 0 0 1 574.79 421.97 L 692.00 744.00 L 846.00 306.00 L 744.24 306.00 L 682.07 482.82 L 649.96 394.60 A 146.82 146.82 0 0 0 374.04 394.60 L 341.93 482.82 L 279.76 306.00 Z"/>
+  <path d="M 158.00 306.00 L 297.76 306.00 L 297.76 322.00 Q 285.39 322.00 295.93 352.00 L 194.17 352.00 Q 183.63 322.00 158.00 322.00 Z"/>
+  <path d="M 866.00 306.00 L 726.24 306.00 L 726.24 322.00 Q 738.61 322.00 728.07 352.00 L 829.83 352.00 Q 840.37 322.00 866.00 322.00 Z"/>
+ </g>
+</svg>

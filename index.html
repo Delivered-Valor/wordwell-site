@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WordWell Bible</title>
+<meta name="description" content="An iPhone Bible that shows you the words the writers actually used. Tap a verse, tap a word, see what it can mean. Offline, with no account.">
+<meta name="theme-color" content="#0b0907">
+<meta property="og:title" content="WordWell Bible">
+<meta property="og:description" content="The word beneath the word. An iPhone Bible that shows you the Greek and Hebrew under every verse.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=Noto+Serif+Hebrew:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.add('js')</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
+</head>
+<body>
+
+<a class="skip" href="#iphone">Skip to sign-up</a>
+
+<header class="bar">
+  <a class="wordmark" href="#entrance" data-go="entrance" aria-label="WordWell Bible, back to the entrance">
+    <svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><g fill="currentColor"><path d="M178 306L332 744L449.21 421.97A66.82 66.82 0 0 1 574.79 421.97L692 744L846 306L744.24 306L682.07 482.82L649.96 394.6A146.82 146.82 0 0 0 374.04 394.6L341.93 482.82L279.76 306Z"/><path d="M158 306L297.76 306L297.76 322Q285.39 322 295.93 352L194.17 352Q183.63 322 158 322Z"/><path d="M866 306L726.24 306L726.24 322Q738.61 322 728.07 352L829.83 352Q840.37 322 866 322Z"/></g></svg>
+    <span>WordWell Bible</span>
+  </a>
+  <a class="bar-cta" href="#iphone" data-go="iphone">Tell me when it ships</a>
+</header>
+
+<!-- The hall: rendered by scene.js. Without WebGL the sections below stack as a plain page. -->
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="torch-glow" aria-hidden="true"></div>
+
+<main id="track">
+<div class="ui" id="ui">
+
+  <!-- 0 · The entrance: a carved wall in the dark -->
+  <section class="st st-entrance" id="entrance" data-in="-1" data-out="0.45">
+    <div class="inscription" lang="el" aria-label="John 1:1 in Greek: Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος.">
+      <span>ΕΝ·ΑΡΧΗ·ΗΝ·Ο·<b>ΛΟΓΟΣ</b></span>
+      <span>ΚΑΙ·Ο·<b>ΛΟΓΟΣ</b>·ΗΝ·ΠΡΟΣ</span>
+      <span>ΤΟΝ·ΘΕΟΝ·ΚΑΙ·ΘΕΟΣ</span>
+      <span>ΗΝ·Ο·<b>ΛΟΓΟΣ</b></span>
+    </div>
+    <div class="intro">
+      <h1>The word beneath the word.</h1>
+      <p class="lede">An iPhone Bible that shows you the words the writers actually used, with the Greek and Hebrew right beneath the English. It works offline, with no account.</p>
+      <p class="hint" data-hint>Move your light across the stone.</p>
+    </div>
+    <p class="cue" aria-hidden="true"><span>Scroll to walk in</span><i></i></p>
+  </section>
+
+  <!-- 1 · The English, under the Greek -->
+  <section class="st st-english" id="english" data-in="0.55" data-out="1.75">
+    <p class="kjv">In the beginning was the <em>Word,</em> and the <em>Word</em> was with God, and the <em>Word</em> was God.</p>
+    <p class="ref">John 1:1 · KJV</p>
+    <p class="note">Before it was English, it was Greek. The word in gold is <span lang="el">λόγος</span>, <i>logos</i>, the one John chose, three times, for <i>Word</i>.</p>
+  </section>
+
+  <!-- 2 · Verse View: each row opens its word in Word Detail -->
+  <section class="st st-verse side-left" id="verse" data-in="2.0" data-out="3.2">
+    <h2>Tap any verse.</h2>
+    <p class="lead">It opens into the language it was first written in, one word at a time, with the English beside it. You can see the word John chose, and where it sits in the sentence.</p>
+    <ol class="rows" aria-label="Verse View rows for John 1:1">
+      <li><button type="button" data-word="0"><b lang="el">Ἐν</b><i>en</i><span>In</span></button></li>
+      <li><button type="button" data-word="1"><b lang="el">ἀρχῇ</b><i>archē</i><span>the beginning</span></button></li>
+      <li><button type="button" data-word="2"><b lang="el">ἦν</b><i>ēn</i><span>was</span></button></li>
+      <li><button type="button" data-word="3" aria-current="true"><b lang="el">λόγος</b><i>logos</i><span>the Word</span></button></li>
+      <li><button type="button" data-word="4"><b lang="el">καὶ</b><i>kai</i><span>and</span></button></li>
+      <li><button type="button" data-word="5"><b lang="el">πρὸς</b><i>pros</i><span>with</span></button></li>
+      <li><button type="button" data-word="6"><b lang="el">θεόν</b><i>theon</i><span>God</span></button></li>
+    </ol>
+    <p class="pick">Tap a word to open it.</p>
+    <p class="src">Greek text: SBLGNT. This pairing is a sample. In the app, every mapping names its source.</p>
+  </section>
+
+  <!-- 3 · Word Detail: the open word's entry, and the other six to switch to -->
+  <section class="st st-word side-right" id="word" data-in="3.35" data-out="4.55">
+    <h2>Tap any word.</h2>
+    <div class="word-entry" data-entry aria-live="polite">
+      <p class="gk" lang="el" tabindex="-1">λόγος</p>
+      <p class="tr"><i>logos</i> · the word John chose for <q>Word</q></p>
+      <div class="entry">
+        <p class="entry-head"><span>Strong's G3056</span><span>from G3004 <span lang="el">(λέγω)</span></span></p>
+        <p class="entry-def">Something said (including the thought); by implication, a topic (subject of discourse), also reasoning (the mental faculty) or motive; by extension, a computation; specially, (with the article in John) the Divine Expression (i.e. Christ).</p>
+        <p class="src">Strong's Greek Dictionary (CC0).</p>
+      </div>
+    </div>
+    <p class="weigh">That is the range of meaning the word can carry. It isn’t a hidden meaning of this verse. You weigh it.</p>
+    <div class="others">
+      <p class="others-label" id="others-label">Tap another word</p>
+      <ul aria-labelledby="others-label">
+        <li><button type="button" data-word="0" lang="el">Ἐν</button></li>
+        <li><button type="button" data-word="1" lang="el">ἀρχῇ</button></li>
+        <li><button type="button" data-word="2" lang="el">ἦν</button></li>
+        <li><button type="button" data-word="3" lang="el" aria-current="true">λόγος</button></li>
+        <li><button type="button" data-word="4" lang="el">καὶ</button></li>
+        <li><button type="button" data-word="5" lang="el">πρὸς</button></li>
+        <li><button type="button" data-word="6" lang="el">θεόν</button></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 4 · What it is -->
+  <section class="st st-about" id="about" data-in="4.7" data-out="5.85">
+    <h2>What’s inside.</h2>
+    <div class="about-grid">
+      <ul class="facts">
+        <li><b>Three Bibles, on your phone.</b> KJV, BSB and ASV, ready to read. It never needs a connection.</li>
+        <li><b>Reading is the home screen.</b> It opens where you left off. No account, nothing to sign in to.</li>
+        <li><b>Every verse opens up.</b> Verse View puts the English beside its Greek or Hebrew.</li>
+        <li><b>Every word explains itself.</b> Word Detail gives the word, its transliteration, and what a dictionary says it can mean.</li>
+        <li><b>Every source is named.</b> WordWell shows you the scholarship. It doesn’t pretend to be it.</li>
+      </ul>
+      <aside class="hebrew" aria-label="Hebrew example">
+        <p class="h-word" lang="he" dir="rtl">בְּרֵאשִׁית</p>
+        <p class="h-tr"><i>bereshit</i> · <q>In the beginning</q></p>
+        <p class="src">Genesis 1:1, the first word · Hebrew text: OSHB · Strong's Hebrew H7225. The Hebrew works the same way.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 5 · Out into the daylight -->
+  <section class="st st-iphone" id="iphone" data-in="6.15" data-out="99">
+    <h2>WordWell Bible is coming to iPhone.</h2>
+    <form class="notify" data-notify novalidate>
+      <label class="sr-only" for="email">Email address</label>
+      <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required>
+      <button type="submit"><span class="btn-label">Tell me when it ships</span><span class="btn-busy" aria-hidden="true">Sending…</span></button>
+      <p class="note" aria-live="polite">iPhone only for now. One email when it’s ready, nothing else.</p>
+    </form>
+    <p class="fine">Offline. No account. KJV, BSB and ASV, with the Greek and Hebrew underneath.</p>
+    <footer class="foot">
+      <p>Greek text: SBLGNT (CC BY 4.0) · Hebrew text: OSHB (text public domain, morphology CC BY 4.0) · Strong's Greek dictionary (CC0) · Strong's Hebrew via OpenScriptures HebrewLexicon (CC BY 4.0) · KJV (public domain)</p>
+      <p>© 2026 Delivered Valor LLC</p>
+    </footer>
+  </section>
+
+</div>
+</main>
+
+<script src="site.js" defer></script>
+<script src="scene.js" type="module"></script>
+</body>
+</html>
