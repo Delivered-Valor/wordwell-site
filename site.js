@@ -147,19 +147,19 @@
 
   /* ---------- Navigation: one gesture, one stop ---------- */
   // The walk moves between stops and never rests between them. A wheel gesture, a swipe, an arrow key or the Next button
-  // each walk exactly one stop, over the same eased ~1.3 s however fast the input was, so every move is deliberate and calm.
+  // each walk exactly one stop, over the same unhurried ~2.6 s however fast the input was, so every move is deliberate and calm.
   const targets = { entrance: 0, english: 1.05, verse: 2.6, word: 3.95, about: 5.25, iphone: 6.75 };
   const STOPS = Object.values(targets);
   const NEXT = ['Read it in English', 'Walk through the door', 'Open a word', 'See what’s inside', 'Step into the daylight'];
   const stopAt = y => STOPS.reduce((best, s, i) => Math.abs(s * innerHeight - y) < Math.abs(STOPS[best] * innerHeight - y) ? i : best, 0);
-  const inOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const inOut = t => (1 - Math.cos(Math.PI * t)) / 2;   // sine ease: its fastest moment is only ~1.6× the average pace (a cubic peaks at 3×)
   let walk = 0, walkTo = -1;   // walk: the running walk's id (0 when still); walkTo: the stop it is heading for
   const walkToStop = (i, after) => {
     i = clamp(i, 0, STOPS.length - 1);
     const to = STOPS[i] * innerHeight, from = scrollY, done = () => { walk = 0; walkTo = -1; if (after) after(); };
     if (Math.abs(to - from) < 2) { walk = 0; return done(); }
     if (RM) { walk = 0; scrollTo(0, to); return done(); }   // Reduce Motion: the scene cuts through a dip to dark instead
-    const hops = Math.max(1, Math.abs(stopAt(from) - i)), dur = Math.min(2400, 1300 + (hops - 1) * 300), t0 = performance.now(), id = ++walk; walkTo = i;
+    const hops = Math.max(1, Math.abs(stopAt(from) - i)), dur = Math.min(4800, 2600 + (hops - 1) * 700), t0 = performance.now(), id = ++walk; walkTo = i;
     const step = now => {
       if (walk !== id) return;
       const k = Math.min(1, (now - t0) / dur); scrollTo(0, from + (to - from) * inOut(k));
