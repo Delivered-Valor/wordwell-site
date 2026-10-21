@@ -5,8 +5,9 @@
   'use strict';
 
   /* ---------- Configuration (the only values to edit before launch) ---------- */
-  const NOTIFY_ENDPOINT = '';   // POST endpoint that accepts JSON {email}, e.g. a Formspree or Buttondown form URL.
-  const NOTIFY_MAILTO = '';     // Fallback address for a prefilled mail when no endpoint is set.
+  const NOTIFY_KIT_FORM = 'https://app.kit.com/forms/10079640/subscriptions';   // the Kit form on Josh's account (embed uid 8aae8a8f03)
+  const NOTIFY_ENDPOINT = '';   // Or, instead of Kit: a POST endpoint that accepts JSON {email} (Formspree, a Worker, ...).
+  const NOTIFY_MAILTO = '';     // Fallback address for a prefilled mail when neither is set.
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -26,12 +27,19 @@
       e.preventDefault();
       const email = input.value.trim();
       if (!EMAIL.test(email)) { input.setAttribute('aria-invalid', 'true'); say('That doesn’t look like an email address. Check it and try again.', 'is-error'); input.focus(); return; }
-      if (NOTIFY_ENDPOINT) {
+      if (NOTIFY_KIT_FORM || NOTIFY_ENDPOINT) {
         say('Sending…', 'is-sending'); button.disabled = true;
         try {
-          const r = await fetch(NOTIFY_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ email, source: 'wordwell-landing' }) });
-          if (!r.ok) throw new Error(String(r.status));
-          say('You’re on the list. One email when it ships.', 'is-done');
+          if (NOTIFY_KIT_FORM) {   // Kit takes the form fields as posted and answers JSON with a status (it allows any origin)
+            const body = new FormData(); body.append('email_address', email);
+            const r = await fetch(NOTIFY_KIT_FORM, { method: 'POST', body, headers: { Accept: 'application/json' } });
+            const reply = await r.json().catch(() => ({}));
+            if (!r.ok || reply.status === 'failed') throw new Error(String(r.status));
+          } else {
+            const r = await fetch(NOTIFY_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ email, source: 'wordwell-landing' }) });
+            if (!r.ok) throw new Error(String(r.status));
+          }
+          say('You’re on the list. If an email asks you to confirm, tap its link; after that, one email when it ships.', 'is-done');
         } catch (err) {
           say('That didn’t send. Your address is still here; try again in a moment.', 'is-error');
         } finally { button.disabled = false; }
