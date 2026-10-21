@@ -133,38 +133,104 @@
     cur = Math.abs(target - cur) < .0005 ? target : lerp(cur, target, RM ? 1 : .1);
     ww.p = cur;
     choreograph(cur);
+    updateNext();
     requestAnimationFrame(tick);
   };
 
-  /* ---------- Navigation ---------- */
+  /* ---------- Navigation: one gesture, one stop ---------- */
+  // The walk moves between stops and never rests between them. A wheel gesture, a swipe, an arrow key or the Next button
+  // each walk exactly one stop, over the same eased ~1.3 s however fast the input was, so every move is deliberate and calm.
   const targets = { entrance: 0, english: 1.05, verse: 2.6, word: 3.95, about: 5.25, iphone: 6.75 };
-  // Settling: when the visitor stops scrolling, the walk finishes the step to the nearest stop, so every moment is easy to land on.
   const STOPS = Object.values(targets);
-  let settleT = 0, settling = 0, handled = false;   // handled: the visitor has scrolled since the last settle (programmatic scrolls never settle)
-  const settle = () => {
-    const h = innerHeight, from = scrollY, near = STOPS.reduce((a, b) => Math.abs(b * h - from) < Math.abs(a * h - from) ? b : a) * h;
-    if (Math.abs(near - from) < 2 || from > STOPS[STOPS.length - 1] * h + 2) return;
-    if (RM) { scrollTo(0, near); return; }
-    const t0 = performance.now(), dur = 650 + Math.min(450, Math.abs(near - from) / h * 500), id = ++settling;
-    const step = now => { if (settling !== id) return; const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); scrollTo(0, from + (near - from) * e); if (k < 1) requestAnimationFrame(step); else settling = 0; };
+  const NEXT = ['Read it in English', 'Walk through the door', 'Open a word', 'See what’s inside', 'Step into the daylight'];
+  const stopAt = y => STOPS.reduce((best, s, i) => Math.abs(s * innerHeight - y) < Math.abs(STOPS[best] * innerHeight - y) ? i : best, 0);
+  const inOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  let walk = 0, walkTo = -1;   // walk: the running walk's id (0 when still); walkTo: the stop it is heading for
+  const walkToStop = (i, after) => {
+    i = clamp(i, 0, STOPS.length - 1);
+    const to = STOPS[i] * innerHeight, from = scrollY, done = () => { walk = 0; walkTo = -1; if (after) after(); };
+    if (Math.abs(to - from) < 2) { walk = 0; return done(); }
+    if (RM) { walk = 0; scrollTo(0, to); return done(); }   // Reduce Motion: the scene cuts through a dip to dark instead
+    const hops = Math.max(1, Math.abs(stopAt(from) - i)), dur = Math.min(2400, 1300 + (hops - 1) * 300), t0 = performance.now(), id = ++walk; walkTo = i;
+    const step = now => {
+      if (walk !== id) return;
+      const k = Math.min(1, (now - t0) / dur); scrollTo(0, from + (to - from) * inOut(k));
+      if (k < 1) requestAnimationFrame(step); else done();
+    };
     requestAnimationFrame(step);
   };
-  const touchScroll = () => { settling = 0; handled = true; clearTimeout(settleT); };   // the visitor took over again
-  addEventListener('wheel', touchScroll, { passive: true }); addEventListener('touchstart', touchScroll, { passive: true }); addEventListener('keydown', e => { if (/^(Arrow|Page|Space|Home|End)/.test(e.key) || e.key === ' ') touchScroll(); });
-  addEventListener('scroll', () => { if (settling || !handled) return; clearTimeout(settleT); settleT = setTimeout(() => { handled = false; settle(); }, 170); }, { passive: true });
-  const go = (id, smooth = true) => { const t = targets[id]; if (t == null) return; scrollTo({ top: t * innerHeight, behavior: smooth && !RM ? 'smooth' : 'auto' }); };
+  const here = () => walkTo >= 0 ? walkTo : stopAt(scrollY);
+  const advance = dir => walkToStop(here() + dir);
+
+  // Wheels and trackpads: a gesture is a burst of events (a trackpad's momentum keeps one going for a second or more),
+  // and each burst walks one stop. Pinch-zoom (ctrl+wheel) is left to the browser.
+  let wheelLast = 0, wheelSum = 0, wheelSpent = false;
+  addEventListener('wheel', e => {
+    if (e.ctrlKey) return;
+    e.preventDefault();
+    const now = performance.now();
+    if (now - wheelLast > 220) { wheelSum = 0; wheelSpent = false; }
+    wheelLast = now;
+    if (wheelSpent) return;
+    wheelSum += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    if (Math.abs(wheelSum) > 30) { wheelSpent = true; advance(Math.sign(wheelSum)); }
+  }, { passive: false });
+  // Touch: a vertical swipe walks one stop; the page itself never drags. Pinches (two fingers) are left alone.
+  let swipeY = null, swipeX = 0;
+  addEventListener('touchstart', e => { if (e.touches.length === 1) { swipeY = e.touches[0].clientY; swipeX = e.touches[0].clientX; } else swipeY = null; }, { passive: true });
+  addEventListener('touchmove', e => { if (swipeY !== null && e.touches.length === 1 && e.cancelable) e.preventDefault(); }, { passive: false });
+  addEventListener('touchend', e => {
+    if (swipeY === null) return;
+    const t = e.changedTouches[0], dy = swipeY - t.clientY, dx = t.clientX - swipeX; swipeY = null;
+    if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx)) advance(Math.sign(dy));
+  }, { passive: true });
+  // Keys: arrows, Page Up/Down and Space walk a stop; Home and End go to either end. Typing and pressed controls keep their keys.
+  addEventListener('keydown', e => {
+    if (e.altKey || e.ctrlKey || e.metaKey || !(e.target instanceof Element)) return;
+    if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+    const k = e.key, onControl = !!e.target.closest('button, a');
+    const down = k === 'ArrowDown' || k === 'PageDown' || (k === ' ' && !e.shiftKey && !onControl);
+    const up = k === 'ArrowUp' || k === 'PageUp' || (k === ' ' && e.shiftKey && !onControl);
+    if (down || up) { e.preventDefault(); advance(down ? 1 : -1); }
+    else if (k === 'Home' || k === 'End') { e.preventDefault(); walkToStop(k === 'Home' ? 0 : STOPS.length - 1); }
+  });
+  // Anything else that moves the page (the scrollbar, find-in-page) settles on the nearest stop once it stops.
+  const noSettle = params.has('at');   // review captures pin a position between stops
+  let settleT = 0;
+  addEventListener('scroll', () => {
+    if (walk || noSettle) return;
+    clearTimeout(settleT);
+    settleT = setTimeout(() => { if (!walk && scrollY <= STOPS[STOPS.length - 1] * innerHeight + 2) walkToStop(stopAt(scrollY)); }, 200);
+  }, { passive: true });
+
+  const go = (id, smooth = true, after) => {
+    const i = STOPS.indexOf(targets[id]); if (i < 0) return;
+    if (smooth) walkToStop(i, after); else { walk = 0; walkTo = -1; scrollTo(0, STOPS[i] * innerHeight); if (after) after(); }
+  };
   ww.go = go;
-  // A tapped row walks to Word Detail; focus follows once the entry is on screen (focusing it sooner would jump the walk).
-  openWord = () => { go('word'); setTimeout(() => $('.gk', entry).focus({ preventScroll: true }), RM ? 0 : 1200); };
+  // A tapped row walks to Word Detail, and focus follows it there.
+  openWord = () => go('word', true, () => $('.gk', entry).focus({ preventScroll: true }));
   $$('[data-go]').forEach(a => a.addEventListener('click', e => {
-    e.preventDefault(); go(a.dataset.go);
-    if (a.dataset.go === 'iphone') setTimeout(() => $('#email')?.focus({ preventScroll: true }), RM ? 0 : 1400);
+    e.preventDefault();
+    go(a.dataset.go, true, a.dataset.go === 'iphone' ? () => $('#email')?.focus({ preventScroll: true }) : undefined);
   }));
-  sections.forEach(s => s.el.addEventListener('focusin', () => { if (!s.el.classList.contains('live')) go(s.el.id, false); }));
+  sections.forEach(s => s.el.addEventListener('focusin', () => { if (!s.el.classList.contains('live') && !walk) go(s.el.id, false); }));
+
+  // The Next control: on every screen until the daylight, named for where it goes.
+  const nextWrap = $('[data-next-wrap]'), nextBtn = $('[data-next]'), nextLabel = $('[data-next-label]');
+  let nextShown = -1;
+  if (nextWrap) { nextWrap.hidden = false; nextBtn.addEventListener('click', () => advance(1)); }
+  const updateNext = () => {
+    if (!nextWrap) return;
+    const i = here();
+    if (i !== nextShown) { nextShown = i; if (i < NEXT.length) nextLabel.textContent = NEXT[i]; html.classList.toggle('at-end', i >= NEXT.length); }
+  };
 
   /* ---------- Start ---------- */
   const at = parseFloat(params.get('at'));
   if (!Number.isNaN(at)) { scrollTo(0, at * innerHeight); cur = target = at; ww.p = at; }
   else if (location.hash && targets[location.hash.slice(1)] != null) { go(location.hash.slice(1), false); cur = scrollY / innerHeight; }
+  // A blocked CDN or a stalled GPU never draws the first frame: after six seconds, show the words over the dark anyway.
+  setTimeout(() => { if (!html.classList.contains('lit')) html.classList.add('scene-failed'); }, 6000);
   requestAnimationFrame(tick);
 })();

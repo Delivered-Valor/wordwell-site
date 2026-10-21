@@ -87,7 +87,58 @@ function carveMath({ W, H, cut, gold, fs, FW, FH, ox = 0, oy = 0, GW = W, GH = H
     const ga = clamp(gm[i] * 1.15) * smooth(0, .22, depth) * 255; goldA[j] = goldA[j + 1] = goldA[j + 2] = ga; goldA[j + 3] = 255;
   }
   return { W, H, ox, oy, GW, GH, alb, nrm: normals(hgt, W, H, dmax * 1.25, false), gold: goldA };
-}`;
+}
+// Ashlar masonry: 1.1-unit courses of 2.2-unit blocks, staggered, over a 4.4-unit tile.
+function masonry(size, seed, base) {
+  const T = 4.4, hgt = new Float32Array(size * size), alb = new Uint8ClampedArray(size * size * 4), n1 = noise2(seed, 6), n2 = noise2(seed + 9, 24), n3 = noise2(seed + 13, 10), r = rng(seed + 3);
+  const tint = Float32Array.from({ length: 64 }, () => .9 + r() * .2);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const u = x / size * T, v = y / size * T, course = Math.floor(v / 1.1), cv = v - course * 1.1, off = course % 2 ? 1.1 : 0;
+    const along = (u + off) % 2.2, block = (course * 7 + Math.floor(((u + off) % T) / 2.2)) % 64;   // wrapped, so a block that crosses the tile seam keeps one tint
+    const d = Math.min(cv, 1.1 - cv, along, 2.2 - along);
+    const edge = smooth(.006, .028, d), grain = n2(x / size, y / size), mott = n1(x / size, y / size);
+    // claw-chisel tooling: fine strokes at each block's own angle, their phase wandered by the grain so they never line up
+    // into a printed hatch, and only in patches of the face (raking daylight would otherwise show a regular pattern)
+    const ang = tint[(block + 17) % 64] * 9.4, patch = smooth(.45, .8, n3(x / size, y / size));
+    const tool = Math.sin((along * Math.cos(ang) + cv * Math.sin(ang)) * 110 + grain * 14 + block) * patch;
+    const tilt = (tint[(block + 31) % 64] - 1) * (along - 1.1) * .25;   // each block's face sits at its own slight angle
+    const hv = edge * .9 + grain * .05 + mott * .04 + tool * .005 + tilt * edge, i = y * size + x; hgt[i] = hv;
+    const ao = .8 + .2 * edge, k = tint[block] * (.84 + .26 * mott + .012 * tool) * ao, j = i * 4;
+    alb[j] = base[0] * k; alb[j + 1] = base[1] * k; alb[j + 2] = base[2] * k; alb[j + 3] = 255;
+  }
+  return { alb, nrm: normals(hgt, size, size, size * .02, true) };
+}
+// Floor: 2-unit slabs, each with its own polish, over a 4-unit tile.
+function slabs(size, seed) {
+  const T = 4, hgt = new Float32Array(size * size), alb = new Uint8ClampedArray(size * size * 4), rough = new Uint8ClampedArray(size * size * 4), n1 = noise2(seed, 8), r = rng(seed);
+  const pol = Float32Array.from({ length: 4 }, () => .22 + r() * .2), tone = Float32Array.from({ length: 4 }, () => .85 + r() * .3);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const u = x / size * T, v = y / size * T, su = u % 2, sv = v % 2, s = Math.floor(u / 2) + 2 * Math.floor(v / 2);
+    const d = Math.min(su, 2 - su, sv, 2 - sv), edge = smooth(.008, .03, d), m = n1(x / size, y / size), i = y * size + x, j = i * 4;
+    hgt[i] = edge; const k = tone[s] * (.8 + .4 * m) * (.45 + .55 * edge);
+    alb[j] = 44 * k; alb[j + 1] = 39 * k; alb[j + 2] = 33 * k; alb[j + 3] = 255;
+    const g = lerp(.95, pol[s] + m * .12, edge) * 255; rough[j] = rough[j + 1] = rough[j + 2] = g; rough[j + 3] = 255;
+  }
+  return { alb, rough, nrm: normals(hgt, size, size, size * .01, true) };
+}
+// Column fluting: 20 flutes around the shaft.
+function flutes() {
+  const w = 640, h = 4, hgt = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const f = (x / w * 20) % 1; hgt[y * w + x] = Math.sqrt(Math.max(0, 1 - Math.pow((f - .5) * 2.1, 2))); }
+  return normals(hgt, w, h, 9, true);
+}
+// Honed-stone grain: a tileable micro-relief laid over the carving so the stone keeps its tooth when the camera is close.
+function grainNormal(size, seed) {
+  const n = noise2(seed, 48), n2 = noise2(seed + 5, 160), hgt = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) hgt[y * size + x] = n(x / size, y / size) * .7 + n2(x / size, y / size) * .3;
+  return normals(hgt, size, size, size * .05, true);
+}
+// Everything the hall's surfaces need, in one call (run in the Worker so the first frame never waits for it).
+function surfaces({ S, G }) {
+  const wall = masonry(S, 3, [150, 141, 128]), floor = slabs(S, 21);
+  return { S, G, wallAlb: wall.alb, wallNrm: wall.nrm, floorAlb: floor.alb, floorRough: floor.rough, floorNrm: floor.nrm, flute: flutes(), grain: grainNormal(G, 31) };
+}
+`;
 if (ww && canvas && html.classList.contains('stage')) main().catch(err => { console.error(err); html.classList.add('scene-failed'); });
 
 async function main() {
@@ -97,7 +148,7 @@ async function main() {
   const lerp = (a, b, t) => a + (b - a) * t;
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
   const eio = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  const { noise2, rng, normals: normalsRGBA, carveMath } = new Function(MATH_SRC + '; return { noise2, rng, normals, carveMath };')();
+  const { carveMath, surfaces } = new Function(MATH_SRC + '; return { carveMath, surfaces };')();
   const dataTex = (data, w, h, srgb, repeat) => {
     const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat); t.flipY = true; t.generateMipmaps = true;
     t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -123,56 +174,27 @@ async function main() {
   scene.background = new THREE.Color(0x070605);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, .05, 400);
 
+  /* ---------- Off the main thread: the hall's surfaces now, the full carving after the opening ---------- */
+  const worker = (() => { try { return new Worker(URL.createObjectURL(new Blob([MATH_SRC + `
+onmessage = e => {
+  const { id, kind, data } = e.data;
+  if (kind === 'surfaces') { const r = surfaces(data); postMessage({ id, r }, [r.wallAlb, r.wallNrm, r.floorAlb, r.floorRough, r.floorNrm, r.flute, r.grain].map(a => a.buffer)); }
+  else { const r = data.map(carveMath); postMessage({ id, r }, r.flatMap(x => [x.alb.buffer, x.nrm.buffer, x.gold.buffer])); }
+};`], { type: 'text/javascript' }))); } catch (e) { return null; } })();
+  const waiting = new Map(); let asked = 0;
+  if (worker) worker.onmessage = e => { const done = waiting.get(e.data.id); waiting.delete(e.data.id); if (done) done(e.data.r); };
+  const ask = (kind, data, transfer) => worker
+    ? new Promise(res => { const id = ++asked; waiting.set(id, res); worker.postMessage({ id, kind, data }, transfer || []); })
+    : new Promise(res => setTimeout(() => res(kind === 'surfaces' ? surfaces(data) : data.map(carveMath)), 0));   // no Worker: inline, after a frame
+  const S = LOW ? 256 : 512, G = LOW ? 128 : 256;
+  const surfacesReady = ask('surfaces', { S, G });
+
   /* ---------- Fonts first: the carving is drawn with the page's own Garamond ---------- */
   mark('renderer');
   const fontsReady = Promise.race([document.fonts.load('500 120px "EB Garamond"', 'ΕΝΑΡΧΗΛΟΓΟΣΚΑΙΠΘ'), new Promise(r => setTimeout(r, 2500))]);
   try { await fontsReady; } catch (e) { /* draw with the fallback serif */ }
   mark('fonts');
 
-  /* ---------- Textures ---------- */
-  // Ashlar masonry: 1.1-unit courses of 2.2-unit blocks, staggered, over a 4.4-unit tile.
-  const masonry = (size, seed, base) => {
-    const T = 4.4, hgt = new Float32Array(size * size), alb = new Uint8ClampedArray(size * size * 4), n1 = noise2(seed, 6), n2 = noise2(seed + 9, 24), r = rng(seed + 3);
-    const tint = Float32Array.from({ length: 64 }, () => .9 + r() * .2);
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const u = x / size * T, v = y / size * T, course = Math.floor(v / 1.1), cv = v - course * 1.1, off = course % 2 ? 1.1 : 0;
-      const along = (u + off) % 2.2, block = (course * 7 + Math.floor(((u + off) % T) / 2.2)) % 64;   // wrapped, so a block that crosses the tile seam keeps one tint
-      const d = Math.min(cv, 1.1 - cv, along, 2.2 - along);
-      const edge = smooth(.006, .028, d), grain = n2(x / size, y / size), mott = n1(x / size, y / size);
-      // claw-chisel tooling: fine parallel strokes at each block's own angle, fading in and out along the stone
-      const ang = tint[(block + 17) % 64] * 9.4, tool = Math.sin((along * Math.cos(ang) + cv * Math.sin(ang)) * 70 + block) * (.5 + .5 * Math.sin(along * 3.1 + cv * 5.3 + block));
-      const tilt = (tint[(block + 31) % 64] - 1) * (along - 1.1) * .25;   // each block's face sits at its own slight angle
-      const hv = edge * .9 + grain * .05 + mott * .04 + tool * .018 + tilt * edge, i = y * size + x; hgt[i] = hv;
-      const ao = .8 + .2 * edge, k = tint[block] * (.84 + .26 * mott + .04 * tool) * ao, j = i * 4;
-      alb[j] = base[0] * k; alb[j + 1] = base[1] * k; alb[j + 2] = base[2] * k; alb[j + 3] = 255;
-    }
-    return { alb, nrm: normalsRGBA(hgt, size, size, size * .02, true) };
-  };
-  // Floor: 2-unit slabs, each with its own polish, over a 4-unit tile.
-  const slabs = (size, seed) => {
-    const T = 4, hgt = new Float32Array(size * size), alb = new Uint8ClampedArray(size * size * 4), rough = new Uint8ClampedArray(size * size * 4), n1 = noise2(seed, 8), r = rng(seed);
-    const pol = Float32Array.from({ length: 4 }, () => .22 + r() * .2), tone = Float32Array.from({ length: 4 }, () => .85 + r() * .3);
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const u = x / size * T, v = y / size * T, su = u % 2, sv = v % 2, s = Math.floor(u / 2) + 2 * Math.floor(v / 2);
-      const d = Math.min(su, 2 - su, sv, 2 - sv), edge = smooth(.008, .03, d), m = n1(x / size, y / size), i = y * size + x, j = i * 4;
-      hgt[i] = edge; const k = tone[s] * (.8 + .4 * m) * (.45 + .55 * edge);
-      alb[j] = 44 * k; alb[j + 1] = 39 * k; alb[j + 2] = 33 * k; alb[j + 3] = 255;
-      const g = lerp(.95, pol[s] + m * .12, edge) * 255; rough[j] = rough[j + 1] = rough[j + 2] = g; rough[j + 3] = 255;
-    }
-    return { alb, rough, nrm: normalsRGBA(hgt, size, size, size * .01, true) };
-  };
-  // Column fluting: 20 flutes around the shaft.
-  const flutes = () => {
-    const w = 640, h = 4, hgt = new Float32Array(w * h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const f = (x / w * 20) % 1; hgt[y * w + x] = Math.sqrt(Math.max(0, 1 - Math.pow((f - .5) * 2.1, 2))); }
-    return normalsRGBA(hgt, w, h, 9, true);
-  };
-  // Honed-stone grain: a tileable micro-relief laid over the carving so the stone keeps its tooth when the camera is close.
-  const grainNormal = (size, seed) => {
-    const n = noise2(seed, 48), n2 = noise2(seed + 5, 160), hgt = new Float32Array(size * size);
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) hgt[y * size + x] = n(x / size, y / size) * .7 + n2(x / size, y / size) * .3;
-    return normalsRGBA(hgt, size, size, size * .05, true);
-  };
 
   // The inscription: carved relief, ambient occlusion in the cuts, and a separate gold mask for each ΛΟΓΟΣ.
   const LAYOUTS = {
@@ -224,21 +246,19 @@ async function main() {
   };
 
   /* ---------- Materials ---------- */
-  const S = LOW ? 256 : 512;
-  const wallTex = masonry(S, 3, [150, 141, 128]);
-  const wallAlb = dataTex(wallTex.alb, S, S, true, [1 / 4.4, 1 / 4.4]), wallNrm = dataTex(wallTex.nrm, S, S, false, [1 / 4.4, 1 / 4.4]);
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallAlb, normalMap: wallNrm, normalScale: new THREE.Vector2(1.2, 1.2), roughness: .92, metalness: 0, envMapIntensity: 0 });
-  const sideAlb = wallAlb.clone(), sideNrm = wallNrm.clone(); sideAlb.repeat.set(47 / 4.4, 8 / 4.4); sideNrm.repeat.set(47 / 4.4, 8 / 4.4);
-  const sideMat = new THREE.MeshStandardMaterial({ map: sideAlb, normalMap: sideNrm, roughness: .92, envMapIntensity: 0 });
-  const floorTex = slabs(S, 21), fRep = [40 / 4, 62 / 4];
-  const floorMat = new THREE.MeshStandardMaterial({ map: dataTex(floorTex.alb, S, S, true, fRep), roughnessMap: dataTex(floorTex.rough, S, S, false, fRep), normalMap: dataTex(floorTex.nrm, S, S, false, fRep), roughness: 1, metalness: 0, envMapIntensity: 0 });
+  const px = (r, g, b) => new Uint8ClampedArray([r, g, b, 255]), FLAT = () => px(128, 128, 255);
+  const wallRep = [1 / 4.4, 1 / 4.4], sideRep = [47 / 4.4, 8 / 4.4], fRep = [40 / 4, 62 / 4];
+  const wallOffset = new THREE.Vector2();   // set per layout so a course joint meets the tablet frame's foot (see buildTablet)
+  const wallMat = new THREE.MeshStandardMaterial({ map: dataTex(px(135, 127, 115), 1, 1, true, wallRep), normalMap: dataTex(FLAT(), 1, 1, false, wallRep), normalScale: new THREE.Vector2(1.2, 1.2), roughness: .92, metalness: 0, envMapIntensity: 0 });
+  const sideMat = new THREE.MeshStandardMaterial({ map: dataTex(px(135, 127, 115), 1, 1, true, sideRep), normalMap: dataTex(FLAT(), 1, 1, false, sideRep), roughness: .92, envMapIntensity: 0 });
+  const floorMat = new THREE.MeshStandardMaterial({ map: dataTex(px(36, 32, 27), 1, 1, true, fRep), roughnessMap: dataTex(px(120, 120, 120), 1, 1, false, fRep), normalMap: dataTex(FLAT(), 1, 1, false, fRep), roughness: 1, metalness: 0, envMapIntensity: 0 });
   const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb4aa9a, roughness: .86, metalness: 0, envMapIntensity: 0 });
-  const columnMat = new THREE.MeshStandardMaterial({ color: 0xc4baaa, roughness: .8, normalMap: dataTex(flutes(), 640, 4, false, [1, 1]), normalScale: new THREE.Vector2(1.4, 1.4), envMapIntensity: 0 });
+  const columnMat = new THREE.MeshStandardMaterial({ color: 0xc4baaa, roughness: .8, normalMap: dataTex(FLAT(), 1, 1, false, [1, 1]), normalScale: new THREE.Vector2(1.4, 1.4), envMapIntensity: 0 });
   const ceilMat = new THREE.MeshStandardMaterial({ color: 0x1c1915, roughness: .95, envMapIntensity: 0 });
   const dayMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(.5, .48, .45), fog: false });   // the daylight beyond the far door
   const doorGlowTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(32, 28, 4, 32, 60, 96); g.addColorStop(0, '#ffffff'); g.addColorStop(.4, '#b4b4b4'); g.addColorStop(1, '#585858'); x.fillStyle = g; x.fillRect(0, 0, 64, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace; return t; })();
   const doorMat = new THREE.MeshBasicMaterial({ map: doorGlowTex, color: new THREE.Color(.5, .48, .45), fog: false });   // falls off from the crown, so the door reads as light
-  const grainNrm = dataTex(grainNormal(LOW ? 128 : 256, 31), LOW ? 128 : 256, LOW ? 128 : 256, false, [1, 1]);
+  const grainU = { value: dataTex(FLAT(), 1, 1, false, [1, 1]) };
   const panelMat = new THREE.MeshStandardMaterial({ roughness: .88, metalness: 0, envMapIntensity: 0 });
   const grainRepeat = new THREE.Vector2(26, 26);
   // The torch's lens: while its light is on a gilded ΛΟΓΟΣ, that word gives way to the WORD patch cut in its place, written in
@@ -256,7 +276,7 @@ async function main() {
     `;
   const LENS_NORMAL = 'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0; if ( lensW > 0.0 ) mapN = mix( mapN, texture2D( patchNrm, patchUv ).xyz * 2.0 - 1.0, lensW ); mapN.xy *= normalScale;';
   panelMat.onBeforeCompile = sh => {   // a tiled grain normal under the carving's own normal, so close-ups read as stone, not as a picture of stone
-    Object.assign(sh.uniforms, lens); sh.uniforms.grainMap = { value: grainNrm }; sh.uniforms.grainRepeat = { value: grainRepeat };
+    Object.assign(sh.uniforms, lens); sh.uniforms.grainMap = grainU; sh.uniforms.grainRepeat = { value: grainRepeat };
     sh.fragmentShader = LENS_DECL + 'uniform sampler2D grainMap; uniform vec2 grainRepeat;\n' + sh.fragmentShader
       .replace('#include <map_fragment>', `${LENS_AT}#include <map_fragment>
        if ( lensW > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, diffuse * texture2D( patchAlb, patchUv ).rgb, lensW );`)
@@ -274,6 +294,18 @@ async function main() {
       .replace('#include <alphamap_fragment>', 'float gilt = texture2D( alphaMap, vAlphaMapUv ).g; if ( lensW > 0.0 ) gilt = mix( gilt, texture2D( patchGold, patchUv ).g, lensW ); diffuseColor.a *= gilt;')
       .replace('#include <normal_fragment_maps>', `${LENS_NORMAL} normal = normalize( tbn * mapN );`);
   };
+  // The real surfaces, when the Worker has them: swapped map for map, so no shader recompiles.
+  const swap = (m, key, t) => { const old = m[key]; m[key] = t; if (old) old.dispose(); };
+  surfacesReady.then(r => {
+    swap(wallMat, 'map', dataTex(r.wallAlb, r.S, r.S, true, wallRep)); swap(wallMat, 'normalMap', dataTex(r.wallNrm, r.S, r.S, false, wallRep));
+    wallMat.map.offset.copy(wallOffset); wallMat.normalMap.offset.copy(wallOffset);
+    const side = wallMat.map.clone(), sideN = wallMat.normalMap.clone(); side.repeat.set(...sideRep); sideN.repeat.set(...sideRep); side.offset.set(0, 0); sideN.offset.set(0, 0);
+    swap(sideMat, 'map', side); swap(sideMat, 'normalMap', sideN);
+    swap(floorMat, 'map', dataTex(r.floorAlb, r.S, r.S, true, fRep)); swap(floorMat, 'roughnessMap', dataTex(r.floorRough, r.S, r.S, false, fRep)); swap(floorMat, 'normalMap', dataTex(r.floorNrm, r.S, r.S, false, fRep));
+    swap(columnMat, 'normalMap', dataTex(r.flute, 640, 4, false, [1, 1]));
+    const old = grainU.value; grainU.value = dataTex(r.grain, r.G, r.G, false, [1, 1]); old.dispose();
+    mark('surfaces');
+  });
   mark('materials');
 
   /* ---------- Geometry ---------- */
@@ -314,14 +346,10 @@ async function main() {
     if (!staged) { steps.forEach(f => f()); return; }
     let i = 0; const next = () => { steps[i++](); if (i < steps.length) requestAnimationFrame(next); }; requestAnimationFrame(next);
   };
-  const carveWorker = (() => { try { return new Worker(URL.createObjectURL(new Blob([MATH_SRC + '\nonmessage = e => { const rs = e.data.map(carveMath); postMessage(rs, rs.flatMap(r => [r.alb.buffer, r.nrm.buffer, r.gold.buffer])); };'], { type: 'text/javascript' }))); } catch (e) { return null; } })();
   const jobsOf = r => [{ W: r.W, H: r.H, cut: r.cut, gold: r.gold, fs: r.fs, FW: L.FW, FH: L.FH }, ...r.patches];   // the whole carving, then each WORD patch
   const upgradeCarve = () => {   // the full-resolution carving, computed off the main thread and swapped in when ready
     const job = ++carveJob, res = LOW ? 2048 : (layoutKey === 'wide' ? 4096 : 3072), jobs = jobsOf(raster(L, res));
-    if (carveWorker) {
-      const onDone = e => { carveWorker.removeEventListener('message', onDone); if (job !== carveJob) return; applyCarve(e.data, true); mark('carve-hi'); };
-      carveWorker.addEventListener('message', onDone); carveWorker.postMessage(jobs, jobs.flatMap(j => [j.cut.buffer, j.gold.buffer]));
-    } else setTimeout(() => { if (job === carveJob) { applyCarve(jobs.map(carveMath), true); mark('carve-hi'); } }, 0);
+    ask('carve', jobs, jobs.flatMap(j => [j.cut.buffer, j.gold.buffer])).then(r => { if (job !== carveJob) return; applyCarve(r, true); mark('carve-hi'); });
   };
   const buildTablet = () => {
     const key = innerWidth / innerHeight < .95 ? 'tall' : 'wide'; if (key === layoutKey) return; layoutKey = key; L = LAYOUTS[key]; carveJob++;
@@ -334,10 +362,16 @@ async function main() {
     add(new THREE.PlaneGeometry(L.FW, L.FH), panelMat, [0, L.cy, .012]);
     add(new THREE.PlaneGeometry(L.FW, L.FH), goldMat, [0, L.cy, .016]);
     const fw = .22, fd = .14;
-    add(new THREE.BoxGeometry(L.FW + 2 * fw, fw, fd), stoneMat, [0, L.cy + L.FH / 2 + fw / 2, fd / 2], true);
-    add(new THREE.BoxGeometry(L.FW + 2 * fw, fw, fd), stoneMat, [0, L.cy - L.FH / 2 - fw / 2, fd / 2], true);
-    add(new THREE.BoxGeometry(fw, L.FH, fd), stoneMat, [-L.FW / 2 - fw / 2, L.cy, fd / 2], true);
-    add(new THREE.BoxGeometry(fw, L.FH, fd), stoneMat, [L.FW / 2 + fw / 2, L.cy, fd / 2], true);
+    // Courses are 1.1 tall and meet at multiples of 1.1; shift them so one joint runs exactly along the frame's foot. Otherwise a thin
+    // sliver of a course shows under the frame, and in the torch's raking light it reads as a seam.
+    const foot = L.cy - L.FH / 2 - fw; wallOffset.set(0, -(((foot % 1.1) + 1.1) % 1.1) / 4.4);
+    [wallMat.map, wallMat.normalMap].forEach(t => t && t.offset.copy(wallOffset));
+    // The frame is shallow and flush on the wall, with the torch nearly grazing it: its shadow would land detached and frayed
+    // along the shadow map's texels (a bright seam and a hatched band under the tablet), so it casts none.
+    add(new THREE.BoxGeometry(L.FW + 2 * fw, fw, fd), stoneMat, [0, L.cy + L.FH / 2 + fw / 2, fd / 2], false);
+    add(new THREE.BoxGeometry(L.FW + 2 * fw, fw, fd), stoneMat, [0, L.cy - L.FH / 2 - fw / 2, fd / 2], false);
+    add(new THREE.BoxGeometry(fw, L.FH, fd), stoneMat, [-L.FW / 2 - fw / 2, L.cy, fd / 2], false);
+    add(new THREE.BoxGeometry(fw, L.FH, fd), stoneMat, [L.FW / 2 + fw / 2, L.cy, fd / 2], false);
     keys = makeKeys();
   };
 
@@ -365,7 +399,9 @@ async function main() {
     inst(new THREE.CylinderGeometry(.4, .45, 5.4, 48, 1), columnMat, .52 + 2.7);
     inst(new THREE.CylinderGeometry(.64, .42, .42, 40), stoneMat, 6.13);
     inst(new THREE.BoxGeometry(1.35, .2, 1.35), stoneMat, 6.44);
-    [-1, 1].forEach(s => mesh(new THREE.BoxGeometry(.95, .36, 46), stoneMat, { ...P, pos: [s * CX, 6.72, -23], cast: true }));   // architraves
+    // architraves: they start behind the entrance wall (its back face is at z −1.4); ending flush with its front face, their ends
+    // fought it for depth and showed through as bright blocks under the tablet
+    [-1, 1].forEach(s => mesh(new THREE.BoxGeometry(.95, .36, 44.6), stoneMat, { ...P, pos: [s * CX, 6.72, -23.7], cast: true }));
     mesh(new THREE.ExtrudeGeometry(archShape([-DW, -.5, DW, 8.2], DR, 3.6, -.3), { depth: 1, bevelEnabled: false, curveSegments: 48 }), wallMat, { ...P, pos: [0, 0, -47] });   // the far door
     mesh(new THREE.PlaneGeometry(DR * 2 + .6, 7.4), doorMat, { ...P, pos: [0, 3.2, -47.6], receive: false });   // the light in the doorway, brightest at the crown
     mesh(new THREE.PlaneGeometry(500, 260), dayMat, { ...P, pos: [0, 0, -90], receive: false });
@@ -445,11 +481,12 @@ async function main() {
   const night = new THREE.Color(0x070605), daylight = new THREE.Color(0xf3efe6);
   const sp = { x: -.7, y: .3 };   // the torch's own (smoothed) aim, in screen units
   const skipIntro = ww.p > .05 || ww.rm;
-  let start = performance.now(), last = start, rmStation = -1, rmFade = 1, firstFrame = true, afterOpening = false;
+  let sized = innerWidth + 'x' + innerHeight, start = performance.now(), last = start, rmStation = -1, rmFade = 1, firstFrame = true, afterOpening = false;
   const RM_STOPS = [0, 1.05, 2.6, 3.95, 5.25, 7.0];
   const frame = now => {
     requestAnimationFrame(frame);
-    if (document.hidden) return;
+    if (document.hidden || !innerWidth || !innerHeight) return;   // hidden, or laid out at zero size: nothing to draw
+    if (sized !== innerWidth + 'x' + innerHeight) fit();   // a resize (or a page first laid out at zero size) rebuilds the walk
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (firstFrame) start = last = now;   // the opening is timed from the first frame drawn, so a slow first compile never eats it
     const t = (now - start) / 1000, p = ww.p;
@@ -548,10 +585,11 @@ async function main() {
     if (!afterOpening && (skipIntro ? t > .4 : t > 6.4)) { afterOpening = true; upgradeCarve(); }
   };
 
-  addEventListener('resize', () => {
+  const fit = () => {   // size everything to the window; called whenever the frame loop sees the window's size change
+    sized = innerWidth + 'x' + innerHeight;
     renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); bloom.resolution.set(innerWidth, innerHeight);
     const before = layoutKey; rebuild(); if (layoutKey !== before && afterOpening) upgradeCarve();
-  });
+  };
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); html.classList.add('scene-failed'); });
   window.__scene = { scene, camera, renderer, torch, sun, hemi, bloom, panelMat, goldMat, lens, marks };   // inspection handle for review tooling
   requestAnimationFrame(frame);
