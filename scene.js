@@ -147,7 +147,6 @@ async function main() {
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-  const eio = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const { carveMath, surfaces } = new Function(MATH_SRC + '; return { carveMath, surfaces };')();
   const dataTex = (data, w, h, srgb, repeat) => {
     const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat); t.flipY = true; t.generateMipmaps = true;
@@ -463,13 +462,20 @@ onmessage = e => {
   };
   const posCurve = () => new THREE.CatmullRomCurve3(keys.map(k => k.pos), false, 'centripetal');
   const lookCurve = () => new THREE.CatmullRomCurve3(keys.map(k => k.look), false, 'centripetal');
-  let pc, lc;
-  const station = (p, out, look) => {
-    let i = 0; while (i < keys.length - 2 && p > keys[i + 1].p) i++;
-    const a = keys[i], b = keys[i + 1], t = eio(clamp((p - a.p) / (b.p - a.p))), u = (i + t) / (keys.length - 1);
-    pc.getPoint(u, out); lc.getPoint(u, look);
+  let pc, lc, anchors = [];
+  // The camera moves along the path by distance, not by waypoint: between two stops it covers equal distance for equal scroll,
+  // so a step that passes through an extra waypoint (the doorway) never surges. site.js eases the scroll itself, once per step.
+  const STOP_P = [0, 1.05, 2.6, 3.95, 5.25];
+  const pathAnchors = () => {
+    const n = keys.length - 1; pc.arcLengthDivisions = 200 * n; const lens = pc.getLengths();
+    anchors = keys.map((k, i) => [k.p, lens[i * 200]]).filter(([kp], i) => i === 0 || i === n || STOP_P.includes(kp));
   };
-  const rebuild = () => { buildHall(); buildTablet(); keys = makeKeys(); pc = posCurve(); lc = lookCurve(); };
+  const station = (p, out, look) => {
+    let i = 0; while (i < anchors.length - 2 && p > anchors[i + 1][0]) i++;
+    const [pa, la] = anchors[i], [pb, lb] = anchors[i + 1], t = pc.getUtoTmapping(0, lerp(la, lb, clamp((p - pa) / (pb - pa))));
+    pc.getPoint(t, out); lc.getPoint(t, look);
+  };
+  const rebuild = () => { buildHall(); buildTablet(); keys = makeKeys(); pc = posCurve(); lc = lookCurve(); pathAnchors(); };
   mark('geometry'); rebuild(); mark('tablet');
 
   /* ---------- The KJV line: the light on a gilded word lights the matching "Word" (styles.css reads --g0..2) ---------- */

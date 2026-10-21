@@ -147,19 +147,27 @@
 
   /* ---------- Navigation: one gesture, one stop ---------- */
   // The walk moves between stops and never rests between them. A wheel gesture, a swipe, an arrow key or the Next button
-  // each walk exactly one stop, over the same unhurried ~2.6 s however fast the input was, so every move is deliberate and calm.
+  // each walk exactly one stop at the same unhurried pace however fast the input was, so every move is deliberate and calm.
   const targets = { entrance: 0, english: 1.05, verse: 2.6, word: 3.95, about: 5.25, iphone: 6.75 };
   const STOPS = Object.values(targets);
   const NEXT = ['Read it in English', 'Walk through the door', 'Open a word', 'See what’s inside', 'Step into the daylight'];
   const stopAt = y => STOPS.reduce((best, s, i) => Math.abs(s * innerHeight - y) < Math.abs(STOPS[best] * innerHeight - y) ? i : best, 0);
   const inOut = t => (1 - Math.cos(Math.PI * t)) / 2;   // sine ease: its fastest moment is only ~1.6× the average pace (a cubic peaks at 3×)
+  // How long each step takes, by the distance the camera travels: up to the English verse, through the doorway into the hall
+  // (the longest walk, and the one that felt rushed), the two hall stops, and out into the daylight.
+  const STEP_MS = [3500, 7000, 4500, 4500, 6000];
   let walk = 0, walkTo = -1;   // walk: the running walk's id (0 when still); walkTo: the stop it is heading for
   const walkToStop = (i, after) => {
     i = clamp(i, 0, STOPS.length - 1);
     const to = STOPS[i] * innerHeight, from = scrollY, done = () => { walk = 0; walkTo = -1; if (after) after(); };
     if (Math.abs(to - from) < 2) { walk = 0; return done(); }
     if (RM) { walk = 0; scrollTo(0, to); return done(); }   // Reduce Motion: the scene cuts through a dip to dark instead
-    const hops = Math.max(1, Math.abs(stopAt(from) - i)), dur = Math.min(4800, 2600 + (hops - 1) * 700), t0 = performance.now(), id = ++walk; walkTo = i;
+    // One step takes its own time (less if a walk was interrupted part of the way); a jump of several steps is capped at 6 s.
+    const at = stopAt(from), hops = Math.max(1, Math.abs(at - i));
+    const lo = hops > 1 || at !== i ? Math.min(at, i) : (to > from ? i - 1 : i);   // the step being walked: stops lo and lo + 1
+    const dur = hops > 1 ? Math.min(6000, STEP_MS.slice(lo, lo + hops).reduce((a, b) => a + b, 0) * .5)
+      : STEP_MS[lo] * clamp(Math.abs(to - from) / ((STOPS[lo + 1] - STOPS[lo]) * innerHeight), .35, 1);
+    const t0 = performance.now(), id = ++walk; walkTo = i;
     const step = now => {
       if (walk !== id) return;
       const k = Math.min(1, (now - t0) / dur); scrollTo(0, from + (to - from) * inOut(k));
