@@ -1,5 +1,6 @@
-/* WordWell Bible landing page · The Inscription
-   A torchlit walk: a carved Greek wall in the dark, an arched doorway, a hall of columns, and daylight at the end.
+/* WordWell Bible landing page · Dawn and growth (SIZE-252)
+   A walk at first light: a carved Greek wall, an arched doorway, a dim hall the sun reaches through its windows, and full
+   day over a meadow at the far door. The base rules below are the night version's; the Dawn section at the end adjusts them.
    scene.js renders the hall; this sheet styles the words laid over it, and a plain stacked page when WebGL is absent. */
 
 :root {
@@ -275,4 +276,32 @@ html:not(.stage) .about-grid { align-items: start; }
 @media (prefers-reduced-motion: reduce) {
   .next-btn i::after { animation: none; opacity: 1; }
   * { transition-duration: .01ms !important; }
+}
+
+/* ---------- Dawn (SIZE-252): the same walk at first light ---------- */
+/* Each block's shade fades with its words (site.js sets --vis), and is larger, so no line sits past its edge. */
+html.stage .st:not(.st-iphone)::before { inset: -34% -26%; opacity: var(--vis, 1); background: radial-gradient(closest-side, rgba(7, 8, 12, .72), rgba(7, 8, 12, .6) 50%, rgba(7, 8, 12, .3) 78%, transparent); }
+html.stage .intro::before { opacity: var(--vis, 1); inset: -40% -34% -34% -28%; background: radial-gradient(closest-side, rgba(7, 8, 12, .74), rgba(7, 8, 12, .55) 55%, rgba(7, 8, 12, .25) 80%, transparent); }
+/* At the door the words are ink, standing in the daylight against the sky: a soft pool of paper keeps them clear of the meadow. */
+html.stage .st-iphone::before { content: ""; position: absolute; left: 50%; top: 52%; width: min(820px, 100vw); height: min(620px, 78vh); transform: translate(-50%, -50%); z-index: -1; opacity: var(--vis, 1); background: radial-gradient(closest-side, rgba(247, 245, 238, .86), rgba(247, 245, 238, .6) 55%, rgba(247, 245, 238, .25) 80%, transparent); pointer-events: none; }
+:root { --night: #0d1118; }   /* the dawn's ground: the skip link, scrollbar, plain page and the dark end of the walk's colour mix follow it */
+html, body { background: var(--night); }
+/* the intro's shade arrives with the first words after the light catches, not before them */
+/* Before the scene takes over, a visit that will get it shows nothing but the dark: no flash of the plain layout, and the
+   opening's words wait for the light as they should. */
+html.pre-stage:not(.stage) .st, html.pre-stage:not(.stage) .next { visibility: hidden; }
+html.pre-stage:not(.stage) .intro > *, html.pre-stage:not(.stage) .next-btn { opacity: 0; transition: none; }   /* start from nothing, so the words never fade in from halfway */
+html.stage:not(.rm) .intro::before { opacity: 0; transition: opacity 1.4s cubic-bezier(.16, 1, .3, 1) 2.1s; }
+html.stage.lit .intro::before { opacity: var(--vis, 1); }
+html.stage.walked .intro::before { transition: none; }
+/* The credits: no box. A soft fall of daylight across the whole foot of the screen, deep enough to carry the small type,
+   with nothing for the door's jambs to cut. */
+html.stage .foot { max-width: none; margin: 0; padding: clamp(72px, 12vh, 120px) max(24px, calc((100vw - 44rem) / 2)) calc(18px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, rgba(246, 244, 238, .97) 0, rgba(246, 244, 238, .93) 38%, rgba(246, 244, 238, .6) 68%, rgba(246, 244, 238, 0) 100%); }
+.foot { color: #4f4a42; }
+.foot a { color: var(--bronze-ink); }
+@media (max-width: 760px) { html.stage .foot { padding: 64px 20px calc(14px + env(safe-area-inset-bottom, 0px)); font-size: 11.5px; line-height: 1.6; } }
+/* The pointer's mark: a point of pale first light, not a flame. */
+@media (hover: hover) and (pointer: fine) {
+  html.stage.torch .torch-glow { background: radial-gradient(circle, #fffaf0 0 30%, #ffe1b0 56%, rgba(255, 214, 160, 0) 74%); box-shadow: 0 0 16px 5px rgba(255, 220, 170, .32); }
 }

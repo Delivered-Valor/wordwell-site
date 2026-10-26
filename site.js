@@ -88,7 +88,7 @@
   let openWord = () => { $('#word').scrollIntoView({ behavior: RM ? 'auto' : 'smooth', block: 'start' }); $('.gk', entry).focus({ preventScroll: true }); };
   wordBtns.forEach(b => b.addEventListener('click', () => { show(+b.dataset.word); if (b.closest('.rows')) openWord(); }));
 
-  if (!webgl || params.has('static')) return;   // plain page: every section stacks, night to day, no scene.
+  if (!webgl || params.has('static')) { html.classList.remove('pre-stage'); return; }   // plain page: every section stacks, night to day, no scene.
   html.classList.add('stage', 'torch');
   if (RM) html.classList.add('rm');
   html.style.setProperty('--track', String(ww.END + 1));
@@ -119,6 +119,7 @@
       const tin = s.a < 0 ? 1 : eo(ramp(p, s.a, s.a + FADE)), tout = eo(ramp(p, s.b - FADE, s.b));
       const vis = tin * (1 - tout);
       s.el.style.opacity = vis > 0.001 ? 1 : 0;
+      s.el.style.setProperty('--vis', vis.toFixed(3));   // each block's shade fades with its words (styles.css reads --vis)
       s.el.classList.toggle('on', vis > 0.001);
       s.el.classList.toggle('live', vis > 0.6);
       s.kids.forEach((k, i) => {

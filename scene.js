@@ -1,14 +1,18 @@
-/* WordWell Bible landing page · The Inscription.
-   A stone wall in the dark with John 1:1 carved into it in Greek capitals, each λόγος inlaid in gold. The visitor's
-   pointer is a torch; where its light falls on a gilded ΛΟΓΟΣ, the Greek gives way to WORD, cut and gilded in its place.
-   Scrolling walks through the arched doorway and down a hall of columns (site.js sets each stop's words over it), and on
-   out into daylight. Everything is generated here (no model or image files): carving relief, masonry, slabs and fluting are
-   computed into textures at load. site.js publishes scroll progress and the pointer on window.__ww, which this reads. */
+/* WordWell Bible landing page · Dawn and growth (SIZE-252; the night version it replaced is in archive/).
+   A stone wall at first light with John 1:1 carved into it in Greek capitals, each λόγος inlaid in gold. The visitor's
+   pointer holds the first shaft of sun; every gilded ΛΟΓΟΣ inside the shaft gives way to WORD, cut and gilded in its place.
+   Scrolling walks through the arched doorway and down a hall of columns that stays dim and blue while the sun climbs
+   outside: shafts come through arched windows in the left-hand wall and slide as you walk, the hall greens around you
+   (moss, ferns, ivy on real stems, grass), and the far door opens on full day over a meadow. site.js sets each stop's
+   words over it. Everything is generated here (no model or image files): carving relief, masonry, slabs, fluting and the
+   plants' textures are computed at load. site.js publishes scroll progress and the pointer on window.__ww, which this reads. */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const html = document.documentElement, ww = window.__ww, canvas = document.getElementById('scene');
@@ -104,7 +108,9 @@ function masonry(size, seed, base) {
     const tilt = (tint[(block + 31) % 64] - 1) * (along - 1.1) * .25;   // each block's face sits at its own slight angle
     const hv = edge * .9 + grain * .05 + mott * .04 + tool * .005 + tilt * edge, i = y * size + x; hgt[i] = hv;
     const ao = .8 + .2 * edge, k = tint[block] * (.84 + .26 * mott + .012 * tool) * ao, j = i * 4;
-    alb[j] = base[0] * k; alb[j + 1] = base[1] * k; alb[j + 2] = base[2] * k; alb[j + 3] = 255;
+    // moss: in the joints, and creeping a little onto the faces from below, in patches
+    const moss = clamp((1 - smooth(.004, .05, d)) * smooth(.42, .7, n3(x / size + .3, y / size)) + smooth(.62, .85, mott) * (1 - smooth(0, .5, cv)) * .7);
+    alb[j] = lerp(base[0] * k, 74 * (.8 + .4 * grain), moss); alb[j + 1] = lerp(base[1] * k, 96 * (.8 + .4 * grain), moss); alb[j + 2] = lerp(base[2] * k, 46, moss); alb[j + 3] = 255;
   }
   return { alb, nrm: normals(hgt, size, size, size * .02, true) };
 }
@@ -115,9 +121,9 @@ function slabs(size, seed) {
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const u = x / size * T, v = y / size * T, su = u % 2, sv = v % 2, s = Math.floor(u / 2) + 2 * Math.floor(v / 2);
     const d = Math.min(su, 2 - su, sv, 2 - sv), edge = smooth(.008, .03, d), m = n1(x / size, y / size), i = y * size + x, j = i * 4;
-    hgt[i] = edge; const k = tone[s] * (.8 + .4 * m) * (.45 + .55 * edge);
-    alb[j] = 44 * k; alb[j + 1] = 39 * k; alb[j + 2] = 33 * k; alb[j + 3] = 255;
-    const g = lerp(.95, pol[s] + m * .12, edge) * 255; rough[j] = rough[j + 1] = rough[j + 2] = g; rough[j + 3] = 255;
+    hgt[i] = edge; const k = tone[s] * (.8 + .4 * m) * (.6 + .4 * edge), green = 1 - smooth(.01, .07, d);
+    alb[j] = lerp(150 * k, 70, green); alb[j + 1] = lerp(140 * k, 92, green); alb[j + 2] = lerp(122 * k, 44, green); alb[j + 3] = 255;
+    const g = lerp(.95, pol[s] + .3 + m * .12, edge) * 255; rough[j] = rough[j + 1] = rough[j + 2] = g; rough[j + 3] = 255;
   }
   return { alb, rough, nrm: normals(hgt, size, size, size * .01, true) };
 }
@@ -135,7 +141,7 @@ function grainNormal(size, seed) {
 }
 // Everything the hall's surfaces need, in one call (run in the Worker so the first frame never waits for it).
 function surfaces({ S, G }) {
-  const wall = masonry(S, 3, [150, 141, 128]), floor = slabs(S, 21);
+  const wall = masonry(S, 3, [176, 166, 150]), floor = slabs(S, 21);
   return { S, G, wallAlb: wall.alb, wallNrm: wall.nrm, floorAlb: floor.alb, floorRough: floor.rough, floorNrm: floor.nrm, flute: flutes(), grain: grainNormal(G, 31) };
 }
 `;
@@ -159,18 +165,22 @@ async function main() {
   const phone = () => Math.min(innerWidth, innerHeight) < 600 || matchMedia('(hover: none)').matches;
   const LOW = phone();
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, LOW ? 1.5 : 2));
+  // Render scale: start below the screen's full pixel ratio, then let the governor in the frame loop step it up while there
+  // is headroom and back down when frames run long (the words over the scene are HTML, so they stay sharp regardless).
+  const PR_MAX = Math.min(devicePixelRatio || 1, LOW ? 1.5 : 2), PR_MIN = Math.min(PR_MAX, LOW ? .8 : 1);
+  let pr = Math.min(PR_MAX, LOW ? 1.2 : 1.5);
+  renderer.setPixelRatio(pr);
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.1;
-  renderer.shadowMap.enabled = !LOW;
+  renderer.shadowMap.enabled = true;   // phones too: without shadows the walls cannot hold the sun out (maps redraw only when their light changes)
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
   const goldEnv = pmrem.fromScene(new RoomEnvironment(), .04).texture;   // reflections for the gold only (scene.environment would light the stone too)
-  const fog = new THREE.FogExp2(0x070605, .05); scene.fog = fog;
-  scene.background = new THREE.Color(0x070605);
+  const fog = new THREE.FogExp2(0x1b222d, .03); scene.fog = fog;
+  scene.background = new THREE.Color(0x1b222d);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, .05, 400);
 
   /* ---------- Off the main thread: the hall's surfaces now, the full carving after the opening ---------- */
@@ -253,7 +263,16 @@ onmessage = e => {
   const floorMat = new THREE.MeshStandardMaterial({ map: dataTex(px(36, 32, 27), 1, 1, true, fRep), roughnessMap: dataTex(px(120, 120, 120), 1, 1, false, fRep), normalMap: dataTex(FLAT(), 1, 1, false, fRep), roughness: 1, metalness: 0, envMapIntensity: 0 });
   const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb4aa9a, roughness: .86, metalness: 0, envMapIntensity: 0 });
   const columnMat = new THREE.MeshStandardMaterial({ color: 0xc4baaa, roughness: .8, normalMap: dataTex(FLAT(), 1, 1, false, [1, 1]), normalScale: new THREE.Vector2(1.4, 1.4), envMapIntensity: 0 });
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x1c1915, roughness: .95, envMapIntensity: 0 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x6f675b, roughness: .95, envMapIntensity: 0 });
+  const daylit = [];   // [material, its full-day colour]: everything beyond the far door, dimmed together while the door is far off
+  const skyTex = (() => { const c = document.createElement('canvas'); c.width = 4; c.height = 256; const x = c.getContext('2d'), g = x.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#5f90b0'); g.addColorStop(.5, '#93b6c9'); g.addColorStop(.7, '#c3d5d9'); g.addColorStop(.84, '#ecebdf'); g.addColorStop(.9, '#f8f1e0'); g.addColorStop(1, '#e9dfc4'); x.fillStyle = g; x.fillRect(0, 0, 4, 256);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const skyMat = new THREE.MeshBasicMaterial({ map: skyTex, color: new THREE.Color(1.08, 1.08, 1.08), fog: false });
+  const skyDay = { value: 0 };   // overhead (seen through the roof) the sky stays a dim dawn blue until the day comes on
+  skyMat.onBeforeCompile = sh => { sh.uniforms.uDay = skyDay; sh.fragmentShader = 'uniform float uDay;\n' + sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( .26, .32, .46 ), smoothstep( .3, .5, vMapUv.y ) * ( 1. - uDay ) );'); };
+  const groundMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(.42, .5, .25), fog: false });
+  daylit.push([skyMat, skyMat.color.clone()], [groundMat, groundMat.color.clone()]);
   const dayMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(.5, .48, .45), fog: false });   // the daylight beyond the far door
   const doorGlowTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(32, 28, 4, 32, 60, 96); g.addColorStop(0, '#ffffff'); g.addColorStop(.4, '#b4b4b4'); g.addColorStop(1, '#585858'); x.fillStyle = g; x.fillRect(0, 0, 64, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace; return t; })();
   const doorMat = new THREE.MeshBasicMaterial({ map: doorGlowTex, color: new THREE.Color(.5, .48, .45), fog: false });   // falls off from the crown, so the door reads as light
@@ -307,6 +326,199 @@ onmessage = e => {
   });
   mark('materials');
 
+  /* ---------- Growth: plants rooted in moss, growing as you walk ---------- */
+  // Every plant starts from somewhere a plant could take hold: moss and soil in the corners where the floor meets a wall or a
+  // column's plinth, and the tops of beams. Vines draw out along real stems and put out leaves as they go; each piece is born
+  // at its own point on the walk (aBirth), so the hall greens as the day comes on.
+  const grow = { value: 0 };
+  const growify = m => { m.onBeforeCompile = sh => { sh.uniforms.uGrow = grow; sh.vertexShader = 'attribute float aBirth; uniform float uGrow;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed *= smoothstep( aBirth, aBirth + .45, uGrow );'); }; return m; };
+  const canvasTex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; return t; };
+  const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(20261026);
+  const vnoise = n => { const g = Float32Array.from({ length: (n + 1) * (n + 1) }, rnd), s = t => t * t * (3 - 2 * t);
+    return (u, v) => { const X = u * n, Y = v * n, i = Math.min(n - 1, Math.floor(X)), j = Math.min(n - 1, Math.floor(Y)), fx = s(X - i), fy = s(Y - j), at = (a, b) => g[b * (n + 1) + a];
+      return lerp(lerp(at(i, j), at(i + 1, j), fx), lerp(at(i, j + 1), at(i + 1, j + 1), fx), fy); }; };
+  const leafTex = canvasTex(128, 128, x => {   // an ivy leaf: five shallow lobes, a notch at the stem, pale veins, a darker rim
+    x.translate(64, 76); x.beginPath();
+    for (let i = 0; i <= 240; i++) { const a = i / 240 * Math.PI * 2, r = 54 * (.74 + .26 * Math.cos(5 * a)) * (1 - .1 * Math.cos(a)); x.lineTo(r * Math.sin(a), -r * Math.cos(a) * .9); }
+    const g = x.createRadialGradient(0, -10, 2, 0, -10, 62); g.addColorStop(0, '#f6f8ef'); g.addColorStop(.7, '#d9e0c9'); g.addColorStop(1, '#aab593'); x.fillStyle = g; x.fill();
+    x.strokeStyle = 'rgba(255,255,255,.6)'; x.lineCap = 'round';
+    [0, 1.26, -1.26, 2.4, -2.4].forEach((a, i) => { x.lineWidth = i ? 1.6 : 2.4; x.beginPath(); x.moveTo(0, 6); x.quadraticCurveTo(16 * Math.sin(a), -12 * Math.cos(a), 44 * Math.sin(a), -44 * Math.cos(a) * .9); x.stroke(); });
+  });
+  const frondTex = canvasTex(96, 320, x => {   // a fern frond: a curving rachis, paired pinnae that are themselves toothed, widest low
+    x.fillStyle = '#e9f0dc'; x.strokeStyle = '#e9f0dc'; x.lineWidth = 2.6; x.beginPath(); x.moveTo(48, 320); x.quadraticCurveTo(50, 160, 46, 4); x.stroke();
+    for (let y = 300; y > 8; y -= 9) { const tt = 1 - y / 320, L = 40 * Math.sin(Math.PI * Math.min(1, .08 + tt * .98)) * (1 - tt * .45), cx = 48 + 2 * Math.sin(tt * 3);
+      [-1, 1].forEach(s => { x.save(); x.translate(cx, y); x.rotate(s * (Math.PI / 2 - .5)); for (let k = 0; k < L; k += 4) { const w = 3.6 * (1 - k / L) + .8; x.beginPath(); x.ellipse(0, -k - 2, w, 2.6, 0, 0, Math.PI * 2); x.fill(); } x.restore(); }); }
+  });
+  const bladeTex = canvasTex(16, 128, x => { const g = x.createLinearGradient(0, 128, 0, 0); g.addColorStop(0, '#9aa98a'); g.addColorStop(1, '#f6f8ee'); x.fillStyle = g; x.beginPath(); x.moveTo(1, 128); x.quadraticCurveTo(7, 50, 8, 0); x.quadraticCurveTo(9, 50, 15, 128); x.fill(); });
+  const flowerTex = canvasTex(64, 64, x => {   // a daisy-like head: tinted per instance into daisies, poppies, buttercups and cornflowers
+    x.translate(32, 32); x.fillStyle = '#ffffff';
+    for (let i = 0; i < 11; i++) { x.save(); x.rotate(i / 11 * Math.PI * 2); x.beginPath(); x.ellipse(0, -17, 5.2, 13, 0, 0, Math.PI * 2); x.fill(); x.restore(); }
+    x.fillStyle = '#e9b93a'; x.beginPath(); x.arc(0, 0, 7, 0, Math.PI * 2); x.fill();
+  });
+  const mossTex = canvasTex(256, 256, x => {   // a patch of moss over damp soil: blotchy, soft at its ragged edge
+    const im = x.createImageData(256, 256), n1 = vnoise(9), n2 = vnoise(36), n3 = vnoise(70);
+    for (let j = 0; j < 256; j++) for (let i = 0; i < 256; i++) {
+      const u = i / 255, v = j / 255, r = Math.hypot(u - .5, v - .5) * 2, a = clamp((1 - r) * 2.1 + (n1(u, v) - .5) * 1.9 + (n2(u, v) - .5) * .6);
+      const m = smooth(.35, .7, n2(u, v) * .7 + n3(u, v) * .3), k = (i + j * 256) * 4, tone = .8 + .4 * n3(u, v);
+      im.data[k] = lerp(70, 104, m) * tone; im.data[k + 1] = lerp(60, 132, m) * tone; im.data[k + 2] = lerp(40, 52, m) * tone; im.data[k + 3] = 255 * smooth(.08, .5, a);
+    }
+    x.putImageData(im, 0, 0);
+  });
+  const LEAF_C = [0x3d6127, 0x4c7530, 0x5f8a37, 0x7aa043, 0x98b955].map(c => new THREE.Color(c));
+  const FLOWER_C = [0xffffff, 0xfffbef, 0xf04a26, 0xffd23a, 0xf1a0b4, 0x7f95e8].map(c => new THREE.Color(c));
+  const pickC = (cs, w) => cs[Math.min(cs.length - 1, Math.floor(Math.pow(rnd(), w || 1) * cs.length))];
+  const leafC = age => LEAF_C[Math.min(4, Math.max(0, Math.round((1 - age) * 3 + rnd() * 1.6 - .3)))];   // old leaves near the root are darker, new ones at the tips paler
+  const leafGeo = new THREE.PlaneGeometry(1, 1, 2, 2).translate(0, .5, 0);
+  { const a = leafGeo.attributes.position; for (let i = 0; i < a.count; i++) a.setZ(i, -.08 * Math.abs(a.getX(i)) * 2 + .05 * a.getY(i)); leafGeo.computeVertexNormals(); }   // a slight cup
+  const frondGeo = (() => { const g = new THREE.PlaneGeometry(.42, 1, 1, 14).translate(0, .5, 0), a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) { const t = a.getY(i), k = 1.9; a.setY(i, Math.sin(t * k) / k); a.setZ(i, (1 - Math.cos(t * k)) / k); } g.computeVertexNormals(); return g; })();
+  const bladeGeo = (() => { const g = new THREE.PlaneGeometry(.07, .6, 1, 4).translate(0, .3, 0), a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) { const t = a.getY(i) / .6; a.setZ(i, .16 * t * t); } g.computeVertexNormals(); return g; })();
+  const headGeo = new THREE.PlaneGeometry(.17, .17);
+  let shadowsStale = true;
+  const tmpO = new THREE.Object3D(), tmpV = new THREE.Vector3(), UPV = new THREE.Vector3(0, 1, 0), DOWNV = new THREE.Vector3(0, -1, 0);
+  // The hall's plants are built after the first frame, off the opening's critical path, and their shaders compiled before
+  // they are shown, so neither the first frame nor the walk ever stalls on them.
+  let firstDrawn = false; const plantQueue = [];
+  const plantLater = (parent, make) => { const job = () => { const g = new THREE.Group(); g.add(...make()); renderer.compileAsync(g, camera, scene).catch(() => {}).then(() => { if (g.children.length) parent.add(g); mark('planted'); shadowsStale = true; }); };
+    if (firstDrawn) setTimeout(job, 0); else plantQueue.push(job); };
+  const withBirth = (geo, items) => { const g = geo.clone(); g.setAttribute('aBirth', new THREE.InstancedBufferAttribute(Float32Array.from(items, i => i.birth), 1)); return g; };
+  // Fronds, grass and flowers: placed by a point, the way they face, a turn about it and a size.
+  const foliage = (geo, tex, items, rough = .78, outside = false) => {
+    const m = growify(outside ? new THREE.MeshBasicMaterial({ map: tex, alphaTest: .5, side: THREE.DoubleSide, fog: false })
+      : new THREE.MeshStandardMaterial({ map: tex, alphaTest: .5, side: THREE.DoubleSide, roughness: rough, metalness: 0, envMapIntensity: 0, emissive: 0x15210c, emissiveMap: tex }));
+    const im = new THREE.InstancedMesh(withBirth(geo, items), m, Math.max(1, items.length));
+    items.forEach((it, k) => { tmpO.position.copy(it.p); tmpO.lookAt(tmpV.copy(it.p).add(it.n)); tmpO.rotateZ(it.spin || 0); if (it.tilt) tmpO.rotateX(it.tilt); tmpO.scale.setScalar(it.s); tmpO.updateMatrix(); im.setMatrixAt(k, tmpO.matrix); im.setColorAt(k, it.c); });
+    if (outside) daylit.push([m, m.color.clone()]);
+    im.count = items.length; im.castShadow = !outside; im.receiveShadow = !outside; im.frustumCulled = false;
+    if (!outside) im.customDepthMaterial = growify(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: .5 }));
+    return im;
+  };
+  // Leaves hang off their stem: each has the direction it points (stem to tip) and the way its face looks.
+  const leafMesh = items => {
+    const m = growify(new THREE.MeshStandardMaterial({ map: leafTex, alphaTest: .5, side: THREE.DoubleSide, roughness: .6, metalness: 0, envMapIntensity: 0, emissive: 0x15210c, emissiveMap: leafTex }));
+    const im = new THREE.InstancedMesh(withBirth(leafGeo, items), m, Math.max(1, items.length)), X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3(), M = new THREE.Matrix4();
+    items.forEach((it, k) => { Y.copy(it.dir).normalize(); Z.copy(it.n).addScaledVector(Y, -it.n.dot(Y)).normalize(); X.crossVectors(Y, Z);
+      M.makeBasis(X.multiplyScalar(it.s), Y.multiplyScalar(it.s), Z.multiplyScalar(it.s)).setPosition(it.p); im.setMatrixAt(k, M); im.setColorAt(k, it.c); });
+    im.count = items.length; im.castShadow = im.receiveShadow = true; im.frustumCulled = false;
+    im.customDepthMaterial = growify(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: leafTex, alphaTest: .5 }));
+    return im;
+  };
+  // Stems: one tube per vine, merged, drawn out from the root as the walk reaches each point along it.
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x77714a, roughness: .9, metalness: 0, envMapIntensity: 0 });
+  stemMat.onBeforeCompile = sh => { sh.uniforms.uGrow = grow;
+    sh.vertexShader = 'attribute float aBirth; varying float vBirth;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vBirth = aBirth;');
+    sh.fragmentShader = 'uniform float uGrow; varying float vBirth;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n if ( vBirth + .2 > uGrow ) discard;'); };
+  const stemMesh = stems => {
+    const geos = stems.filter(s => s.pts.length > 2).map(s => {
+      const segs = s.pts.length, g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), segs, s.r, 3, false), b = new Float32Array(g.attributes.position.count);
+      for (let i = 0; i <= segs; i++) { const v = s.bs[Math.min(s.bs.length - 1, Math.round(i / segs * (s.bs.length - 1)))]; for (let j = 0; j <= 3; j++) b[i * 4 + j] = v; }
+      g.setAttribute('aBirth', new THREE.BufferAttribute(b, 1)); return g; });
+    const o = new THREE.Mesh(geos.length ? mergeGeometries(geos) : new THREE.BufferGeometry(), stemMat); o.castShadow = false; o.receiveShadow = true; o.frustumCulled = false; return o;
+  };
+  // Moss: soft patches on the stone, spreading from their middle.
+  const mossMesh = items => {
+    const m = growify(new THREE.MeshStandardMaterial({ map: mossTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 1, metalness: 0, envMapIntensity: 0 }));
+    const im = new THREE.InstancedMesh(withBirth(new THREE.PlaneGeometry(1, 1), items), m, Math.max(1, items.length));
+    items.forEach((it, k) => { tmpO.position.copy(it.p); tmpO.lookAt(tmpV.copy(it.p).add(it.n)); tmpO.rotateZ(rnd() * 6.3); tmpO.scale.set(it.s * (.8 + rnd() * .4), it.s, 1); tmpO.updateMatrix(); im.setMatrixAt(k, tmpO.matrix); });
+    im.count = items.length; im.receiveShadow = true; im.frustumCulled = false; im.renderOrder = 1; return im;
+  };
+  const green = () => ({ stems: [], leaves: [], moss: [], fronds: [] });
+  // A vine climbs a surface (u, v → point and normal) from its root, pulled toward a heading, wandering a little, and puts out
+  // a leaf on alternate sides every few centimetres; the leaves at the root are older and larger.
+  const vine = (surf, u, v, a, len, o, G, depth = 0) => {
+    const step = .06, pts = [], bs = []; let since = 0, side = rnd() < .5 ? -1 : 1;
+    for (let d = 0; d < len; d += step) {
+      a += (rnd() - .5) * (o.wander || .4); a += ((o.pull ?? a) - a) * (o.pullK || .08);
+      const nu = u + Math.cos(a) * step, nv = v + Math.sin(a) * step;
+      if (o.stop && o.stop(nu, nv)) break;
+      const q = surf(nu, nv); if (o.skip && o.skip(q.p)) break;
+      const prev = surf(u, v).p, tan = q.p.clone().sub(prev).normalize(); u = nu; v = nv;
+      const birth = o.birth + d * (o.rate ?? .12), age = 1 - d / len;
+      pts.push(q.p.clone().addScaledVector(q.n, .025)); bs.push(birth);
+      if ((since += step) >= (o.gap || .11)) { since = 0; side = -side;
+        if (rnd() < (o.density || .92)) {
+          const perp = new THREE.Vector3().crossVectors(q.n, tan).multiplyScalar(side);
+          const dir = perp.multiplyScalar(.85).addScaledVector(q.n, .5).addScaledVector(DOWNV, .3 + rnd() * .3).addScaledVector(tan, .15).normalize();
+          G.leaves.push({ p: q.p.clone().addScaledVector(q.n, .035), dir, n: q.n.clone().addScaledVector(UPV, .3).addScaledVector(perp, .2).normalize(), s: (o.size || .24) * (.55 + .55 * age) * (.85 + rnd() * .3), birth: birth + .06, c: leafC(age) });
+        }
+      }
+      if (depth < 2 && d > .3 && rnd() < (o.branch || .025)) vine(surf, u, v, a + (rnd() < .5 ? -1 : 1) * (.5 + rnd() * .5), (len - d) * (.35 + rnd() * .35), { ...o, birth, r: (o.r || .012) * .75 }, G, depth + 1);
+    }
+    if (pts.length > 2) G.stems.push({ pts, bs, r: o.r || .012 });
+  };
+  // A strand hanging from a beam: it falls with a little sway, leaves turned out and down.
+  const hang = (x, y, z, len, birth, G) => {
+    const sw = rnd() * 6, pts = [], bs = []; let since = 0, side = 1;
+    for (let d = 0; d < len; d += .06) {
+      const p = new THREE.Vector3(x + Math.sin(d * 1.1 + sw) * .12, y - d, z + Math.sin(d * .8 + sw) * .14), b = birth + d * .12;
+      pts.push(p); bs.push(b);
+      if ((since += .06) >= .1) { since = 0; side = -side; const a = sw + d * 2.3 + side * 1.4, out = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+        G.leaves.push({ p: p.clone().addScaledVector(out, .03), dir: out.clone().addScaledVector(DOWNV, .6 + rnd() * .4).normalize(), n: out.clone().addScaledVector(UPV, .4).normalize(), s: .21 * (.6 + .5 * (1 - d / len)) * (.85 + rnd() * .3), birth: b + .06, c: leafC(1 - d / len) }); }
+    }
+    G.stems.push({ pts, bs, r: .011 });
+  };
+  // A fern: fronds rising from one crown and arching out, the inner ones upright and young.
+  const fern = (p, n, s, birth, G) => {
+    const k = 6 + Math.floor(rnd() * 6), a0 = rnd() * 6.3;
+    for (let i = 0; i < k; i++) { const a = a0 + i / k * Math.PI * 2 + (rnd() - .5) * .5, inner = rnd() < .3;
+      G.fronds.push({ p: p.clone().add(new THREE.Vector3((rnd() - .5) * .08, 0, (rnd() - .5) * .08)), n: new THREE.Vector3(Math.cos(a), inner ? 1.4 : .25, Math.sin(a)).normalize(), s: s * (inner ? .65 : .85 + rnd() * .35), spin: (rnd() - .5) * .25, tilt: inner ? -.6 : 0, birth: birth + rnd() * .35, c: pickC(LEAF_C, inner ? .5 : 1.3) }); }
+  };
+  const meadow = (x0, x1, z0, z1, n, birthAt, blades, heads, keep) => {   // grass, with flowers standing in it
+    for (let i = 0; i < n; i++) {
+      const x = lerp(x0, x1, rnd()), z = lerp(z0, z1, rnd()); if (keep && !keep(x, z)) continue;
+      const a = rnd() * Math.PI * 2, birth = birthAt(x, z) + rnd() * .3;
+      blades.push({ p: new THREE.Vector3(x, 0, z), n: new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), s: .6 + rnd() * 1.1, spin: (rnd() - .5) * .5, birth, c: new THREE.Color().setHSL(.2 + rnd() * .08, .45 + rnd() * .2, .3 + rnd() * .2) });
+      if (rnd() < .07) { const h = .3 + rnd() * .55; heads.push({ p: new THREE.Vector3(x, h, z), n: new THREE.Vector3((rnd() - .5) * .8, 1, .6 + rnd()).normalize(), s: .8 + rnd() * .7, spin: rnd() * 6, birth: birth + .2, c: pickC(FLOWER_C) });
+        blades.push({ p: new THREE.Vector3(x, 0, z), n: new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), s: h / .6, spin: 0, birth, c: new THREE.Color(.25, .38, .14) }); }
+    }
+  };
+  const greenery = G => [stemMesh(G.stems), leafMesh(G.leaves), mossMesh(G.moss), foliage(frondGeo, frondTex, G.fronds)];
+
+  // Light through the windows: tall arched windows high in both side walls. The sun is on the left, so the left-hand windows
+  // let down shafts that cross the hall to the floor and the right-hand wall; the right-hand ones only show the dawn sky. A
+  // shaft is drawn as a close stack of thin slices across the hall, each lit only where a ray from that point back toward
+  // the sun passes through a window, so it matches the patch of light it throws. As the sun climbs, the patches slide down
+  // the right-hand wall and across the floor.
+  const WIN = { depth: .6, list: [   // narrow and high near the entrance, opening up toward the door, so the hall brightens as you go
+    { z: -6.75, hw: .3, sill: 4.1, spring: 5.7 }, { z: -15.75, hw: .42, sill: 3.6, spring: 5.55 }, { z: -24.75, hw: .56, sill: 3.0, spring: 5.4 },
+    { z: -33.75, hw: .72, sill: 2.4, spring: 5.25 }, { z: -42.75, hw: .9, sill: 1.8, spring: 5.1 }] };
+  const winD = (w, dz, ry) => (ry < w.spring ? Math.min(w.hw - dz, ry - w.sill) : w.hw - Math.hypot(dz, ry - w.spring));   // inside a window's arch, in metres
+  const ROOF = { wallX: -7.2 };
+  // Each slice is fitted to its own beam: the vertex shader places the slice's four corners around the band of light the
+  // window throws at that depth, for the sun as it is this frame, so a shaft only shades the pixels it actually covers
+  // (filling the hall's whole width with slices cost two-thirds of the frame).
+  const shaftU = { sun: { value: new THREE.Vector3(1, -1, 0).normalize() }, k: { value: 0 }, t: { value: 0 }, col: { value: new THREE.Color() }, wallX: { value: -7.2 }, hallW: { value: 7.2 },
+    wins: { value: WIN.list.map(w => new THREE.Vector4(w.z, w.hw, w.sill, w.spring)) } };
+  const sliceMat = new THREE.ShaderMaterial({ uniforms: shaftU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    vertexShader: `attribute vec2 corner; attribute float aZ, aWin; uniform vec3 sun; uniform float wallX, hallW; uniform vec4 wins[${WIN.list.length}];
+      varying vec3 vW; varying float vS; flat varying int vWin;
+      void main(){
+        vec4 w = wins[int(aWin + .5)]; float top = w.w + w.y, sx = max(.05, sun.x), sy = min(-.05, sun.y);
+        float s0 = 0., s1 = min(2. * hallW / sx, (top + .1) / -sy);
+        if (abs(sun.z) > 1e-4) { float a = (aZ - w.x - w.y - .2) / sun.z, b = (aZ - w.x + w.y + .2) / sun.z; s0 = max(s0, min(a, b)); s1 = min(s1, max(a, b)); }
+        s1 = max(s1, s0);
+        float sl = mix(s0, s1, corner.x);
+        vec3 p = vec3(wallX + sun.x * sl, mix(w.z - .08, top + .08, corner.y) + sun.y * sl, aZ);
+        vW = p; vS = sl; vWin = int(aWin + .5); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.);
+      }`,
+    fragmentShader: `uniform vec3 sun, col; uniform float k, t; uniform vec4 wins[${WIN.list.length}]; varying vec3 vW; varying float vS; flat varying int vWin;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+      void main(){
+        vec4 w = wins[vWin]; vec3 r = vW - sun * vS;   // where this point's sunlight came through the window
+        float dz = abs(r.z - w.x), d = r.y < w.w ? min(w.y - dz, r.y - w.z) : w.y - length(vec2(dz, r.y - w.w));
+        float lit = smoothstep(-.03, .16, d);
+        float dust = .72 + .28 * vn(vec2(vW.x * .6 + t * .04, vW.y * .9 + vW.z * .7 - t * .015));
+        float along = smoothstep(0., 1.2, vW.y) * smoothstep(0., 1.4, vS) * (1. - .45 * smoothstep(5., 15., vS));
+        float near = smoothstep(3.5, 12., distance(vW, cameraPosition));   // a shaft fades as the camera comes up to it, so walking through one never floods the frame
+        gl_FragColor = vec4(col * (k * lit * dust * along * near), 1.);
+      }` });
+  const litAt = (x, y, z, sd) => {   // the same test in script, for the dust
+    const s = (x - ROOF.wallX) / Math.max(.05, sd.x); if (s < 0) return 0; const ry = y - sd.y * s, rz = z - sd.z * s;
+    return WIN.list.reduce((m, w) => Math.max(m, smooth(-.03, .16, winD(w, Math.abs(rz - w.z), ry))), 0);
+  };
+
   /* ---------- Geometry ---------- */
   const archShape = (outer, rx, spring, bottom) => {
     const s = new THREE.Shape(); s.moveTo(outer[0], outer[1]); s.lineTo(outer[2], outer[1]); s.lineTo(outer[2], outer[3]); s.lineTo(outer[0], outer[3]); s.closePath();
@@ -352,7 +564,7 @@ onmessage = e => {
   };
   const buildTablet = () => {
     const key = innerWidth / innerHeight < .95 ? 'tall' : 'wide'; if (key === layoutKey) return; layoutKey = key; L = LAYOUTS[key]; carveJob++;
-    tablet.children.slice().forEach(c => { tablet.remove(c); c.geometry.dispose(); });
+    tablet.children.slice().forEach(c => { tablet.remove(c); c.traverse(o => o.geometry && o.geometry.dispose()); });
     const r = raster(L, LOW ? 1280 : (key === 'wide' ? 2048 : 1536));   // a quick first carving; the full one follows off-thread
     logosBoxes = r.glosses;
     applyCarve(jobsOf(r).map(carveMath), false);
@@ -371,6 +583,20 @@ onmessage = e => {
     add(new THREE.BoxGeometry(L.FW + 2 * fw, fw, fd), stoneMat, [0, L.cy - L.FH / 2 - fw / 2, fd / 2], false);
     add(new THREE.BoxGeometry(fw, L.FH, fd), stoneMat, [-L.FW / 2 - fw / 2, L.cy, fd / 2], false);
     add(new THREE.BoxGeometry(fw, L.FH, fd), stoneMat, [L.FW / 2 + fw / 2, L.cy, fd / 2], false);
+    // Ivy at the entrance: rooted in moss at the foot of the wall, climbing beside the doorway to the foot of the tablet, and
+    // spilling over the top of the wall; it never crosses the doorway, the archivolt or the tablet.
+    const fx = L.FW / 2 + fw, fy0 = L.cy - L.FH / 2 - fw, fy1 = L.cy + L.FH / 2 + fw, E = green();
+    const front = (u, v) => ({ p: new THREE.Vector3(u, v, 0), n: new THREE.Vector3(0, 0, 1) });
+    const skip = p => (Math.abs(p.x) < fx + .04 && p.y > fy0 - .04 && p.y < fy1 + .04) || (Math.abs(p.x) < RX + .4 && p.y < SPRING + Math.sqrt(Math.max(0, (RX + .4) ** 2 - p.x * p.x)));
+    const up = { pull: Math.PI / 2, pullK: .05, rate: .06, size: .27, skip, branch: .05 };
+    [[RX + .75, -1, 7], [RX + 1.9, -.6, 5], [-(fx + .6), -1.2, 9], [fx + 1.1, -.5, 6], [-(fx + 2.6), -.9, 9], [fx + 3, -.7, 7.5]].forEach(([x, b, len], i) => {
+      E.moss.push({ p: new THREE.Vector3(x, .004, .45), n: UPV, s: 1.3 + rnd() * .6, birth: b - .4 }, { p: new THREE.Vector3(x + (rnd() - .5) * .3, .32, .012), n: new THREE.Vector3(0, 0, 1), s: .8 + rnd() * .4, birth: b - .3 });
+      if (i % 2 === 0) fern(new THREE.Vector3(x + .25, .01, .4), UPV, .75, b - .2, E);
+      vine(front, x, .05, Math.PI / 2 + (rnd() - .5) * .3, len, { ...up, birth: b, pull: Math.PI / 2 + (x < 0 ? .1 : -.1) }, E);
+    });
+    const down = { pull: -Math.PI / 2, pullK: .06, rate: .06, size: .27, skip, branch: .06 };
+    [[-(fx + .3), -1.2, 9], [-(fx - 1.2), -1, 6], [fx - .8, -.9, 6], [fx + .6, -.5, 9]].forEach(([x, b, len]) => vine(front, x, 16, -Math.PI / 2, len, { ...down, birth: b }, E));
+    plantLater(tablet, () => greenery(E));
     keys = makeKeys();
   };
 
@@ -380,13 +606,31 @@ onmessage = e => {
   let hallKey = '';
   const buildHall = () => {
     const tall = innerWidth / innerHeight < .95, key = tall ? 'tall' : 'wide'; if (key === hallKey) return; hallKey = key;
-    hall.children.slice().forEach(c => { hall.remove(c); c.geometry.dispose(); });
+    hall.children.slice().forEach(c => { hall.remove(c); c.traverse(o => o.geometry && o.geometry.dispose()); });
     const CX = tall ? 2.3 : 3.6, HW = tall ? 4.7 : 7.2, CW = tall ? 10 : 16, DW = tall ? 5.3 : 8, DR = tall ? 1.9 : 2.4;
     sconces.forEach(sc => { sc.l.position.x = sc.side * (HW - .35); sc.s.position.x = sc.l.position.x; sc.s.scale.setScalar(tall ? .34 : .6); });   // the wide hall's flames throw further, so they show bigger
     const P = { parent: hall };
     mesh(new THREE.PlaneGeometry(40, 62), floorMat, { ...P, pos: [0, 0, -17], rot: [-Math.PI / 2, 0, 0] });
-    mesh(new THREE.PlaneGeometry(CW, 47), ceilMat, { ...P, pos: [0, 6.9, -23.5], rot: [Math.PI / 2, 0, 0] });
-    [-1, 1].forEach(s => mesh(new THREE.PlaneGeometry(47, 8), sideMat, { ...P, pos: [s * HW, 3.4, -23.5], rot: [0, -s * Math.PI / 2, 0] }));
+    // The roof: solid, on cross beams over each pair of columns. Light comes in only by the windows in the side walls.
+    ROOF.wallX = -HW; shaftU.wallX.value = -HW;
+    mesh(new THREE.BoxGeometry(HW * 2 + .4, .3, 46), ceilMat, { ...P, pos: [0, 7.35, -24.2], cast: true });
+    { const zs = []; for (let z = -4.5; z > -46.5; z -= 4.5) zs.push(z);
+      const crs = new THREE.InstancedMesh(new THREE.BoxGeometry(HW * 2, .34, .7), stoneMat, zs.length);
+      zs.forEach((z, i) => { tmpO.position.set(0, 7.02, z); tmpO.rotation.set(0, 0, 0); tmpO.scale.setScalar(1); tmpO.updateMatrix(); crs.setMatrixAt(i, tmpO.matrix); });
+      crs.castShadow = crs.receiveShadow = true; hall.add(crs);
+      ROOF.hallW = HW; shaftU.hallW.value = HW;
+      const per = LOW ? 7 : 14, n = WIN.list.length * per, corner = new Float32Array(n * 8), aZ = new Float32Array(n * 4), aWin = new Float32Array(n * 4), idx = [];
+      WIN.list.forEach((w, wi) => { for (let i = 0; i < per; i++) { const q = wi * per + i, z = lerp(w.z - w.hw - .25, w.z + w.hw + .9, (i + .5) / per);
+        corner.set([0, 0, 1, 0, 0, 1, 1, 1], q * 8); aZ.fill(z, q * 4, q * 4 + 4); aWin.fill(wi, q * 4, q * 4 + 4); idx.push(q * 4, q * 4 + 1, q * 4 + 2, q * 4 + 2, q * 4 + 1, q * 4 + 3); } });
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 12), 3)); g.setAttribute('corner', new THREE.BufferAttribute(corner, 2));
+      g.setAttribute('aZ', new THREE.BufferAttribute(aZ, 1)); g.setAttribute('aWin', new THREE.BufferAttribute(aWin, 1)); g.setIndex(idx);
+      const shafts = new THREE.Mesh(g, sliceMat); shafts.frustumCulled = false; shafts.renderOrder = 5; hall.add(shafts); }
+    // The side walls, with their windows: thick enough that each window has a reveal, which softens the edge of its shaft.
+    [-1, 1].forEach(s => {
+      const sh = new THREE.Shape(); sh.moveTo(0, -.6); sh.lineTo(47, -.6); sh.lineTo(47, 7.6); sh.lineTo(0, 7.6); sh.closePath();
+      WIN.list.forEach(w => { const u = -w.z, h = new THREE.Path(); h.moveTo(u - w.hw, w.sill); h.lineTo(u + w.hw, w.sill); h.lineTo(u + w.hw, w.spring); h.absarc(u, w.spring, w.hw, 0, Math.PI, false); h.lineTo(u - w.hw, w.sill); sh.holes.push(h); });
+      mesh(new THREE.ExtrudeGeometry(sh, { depth: WIN.depth, bevelEnabled: false, curveSegments: 24 }).rotateY(Math.PI / 2), wallMat, { ...P, pos: [s < 0 ? -HW - WIN.depth : HW, 0, 0], cast: true });
+    });
     const COLS = []; for (let z = -4.5; z >= -41; z -= 4.5) COLS.push([-CX, z], [CX, z]);
     const inst = (g, m, y) => {
       const im = new THREE.InstancedMesh(g, m, COLS.length), o = new THREE.Object3D();
@@ -401,19 +645,72 @@ onmessage = e => {
     // architraves: they start behind the entrance wall (its back face is at z −1.4); ending flush with its front face, their ends
     // fought it for depth and showed through as bright blocks under the tablet
     [-1, 1].forEach(s => mesh(new THREE.BoxGeometry(.95, .36, 44.6), stoneMat, { ...P, pos: [s * CX, 6.72, -23.7], cast: true }));
-    mesh(new THREE.ExtrudeGeometry(archShape([-DW, -.5, DW, 8.2], DR, 3.6, -.3), { depth: 1, bevelEnabled: false, curveSegments: 48 }), wallMat, { ...P, pos: [0, 0, -47] });   // the far door
-    mesh(new THREE.PlaneGeometry(DR * 2 + .6, 7.4), doorMat, { ...P, pos: [0, 3.2, -47.6], receive: false });   // the light in the doorway, brightest at the crown
-    mesh(new THREE.PlaneGeometry(500, 260), dayMat, { ...P, pos: [0, 0, -90], receive: false });
+    mesh(new THREE.ExtrudeGeometry(archShape([-DW, -.5, DW, 8.2], DR, 3.6, -.3), { depth: 1, bevelEnabled: false, curveSegments: 48 }), wallMat, { ...P, pos: [0, 0, -47], cast: true });   // the far door
+    mesh(new THREE.PlaneGeometry(400, 70), skyMat, { ...P, pos: [0, 28, -110], receive: false });   // beyond the far door: sky
+    mesh(new THREE.PlaneGeometry(160, 70), groundMat, { ...P, pos: [0, .005, -82], rot: [-Math.PI / 2, 0, 0] });   // and a meadow
+    // Growth: moss and soil gather where the floor meets the walls and the column plinths, more of it toward the door; ferns
+    // and ivy root in it; ivy climbs the walls and the columns, and strands hang from the cross beams over the aisles, toward
+    // the light. Near the door grass and flowers come up through the moss. Each piece begins at its own point on the walk.
+    const depth = z => clamp(-z / 44), hb = f => lerp(.5, 3.4, f), G = green(), blades = [], heads = [];
+    [-1, 1].forEach(s => {
+      for (let z = -2.4; z > -46.4; z -= .8 + rnd() * .9) {
+        const f = depth(z); if (rnd() > .45 + f * .7) continue;
+        const b = hb(f) + rnd() * .3, x = s * (HW - .3 - rnd() * .3);
+        G.moss.push({ p: new THREE.Vector3(x, .003, z), n: UPV, s: .9 + rnd() * 1.1 + f * .6, birth: b - .3 });
+        if (rnd() < .45) G.moss.push({ p: new THREE.Vector3(s * (HW - .015), .25 + rnd() * .2, z + (rnd() - .5) * .4), n: new THREE.Vector3(-s, 0, 0), s: .6 + rnd() * .5, birth: b - .2 });
+        if (rnd() < .3 + f * .6) fern(new THREE.Vector3(x + s * .08, .01, z), UPV, .7 + rnd() * .4 + f * .3, b, G);
+        if (rnd() < .45 + f * .4) { const wall = (u, v) => ({ p: new THREE.Vector3(s * (HW - .02), v, u), n: new THREE.Vector3(-s, 0, 0) });
+          vine(wall, z, .05, Math.PI / 2 + (rnd() - .5) * .5, lerp(3, 7, f) * (.6 + rnd() * .5), { pull: Math.PI / 2, pullK: .05, birth: b, rate: .07, skip: q => WIN.list.some(w => Math.abs(q.z - w.z) < w.hw + .05 && q.y > w.sill - .05), size: .25, branch: .05, stop: (u, v) => v > 6.95 }, G); }
+      }
+    });
+    COLS.forEach(([x, z]) => {
+      const f = depth(z); if (rnd() > .55 + f) return;
+      const b = hb(f) + rnd() * .3, a = rnd() * 6.3, mp = new THREE.Vector3(x + Math.cos(a) * .72, .004, z + Math.sin(a) * .72);
+      G.moss.push({ p: mp, n: UPV, s: .8 + rnd() * .6 + f * .5, birth: b - .3 });
+      if (rnd() < .5 + f * .4) fern(mp.clone().setY(.01), UPV, .6 + f * .4, b, G);
+      if (f > .08) { const r = .47, col = (u, v) => { const th = u / r; return { p: new THREE.Vector3(x + Math.cos(th) * r, v, z + Math.sin(th) * r), n: new THREE.Vector3(Math.cos(th), 0, Math.sin(th)) }; };
+        for (let i = 0; i < (f > .6 ? 2 : 1); i++) vine(col, (a + (rnd() - .5) * .6) * r, .55, Math.PI / 2 + (rnd() - .5) * .4, lerp(1.6, 5.8, f) * (.7 + rnd() * .4), { pull: Math.PI / 2 + .45, pullK: .05, birth: b + .15, rate: .07, size: .24, stop: (u, v) => v > 5.85 }, G); }
+    });
+    for (let z = -4.5; z > -46; z -= 4.5) { const f = depth(z), n = Math.round(1.5 + f * 4 + rnd() - .3);
+      for (let i = 0; i < n; i++) { const side = rnd() < .5 ? -1 : 1; hang(side * lerp(CX + .7, HW - .4, rnd()), 6.85, z + (rnd() - .5) * .4, lerp(.6, 2.6, f) * (.6 + rnd() * .5), hb(f) + .3 + rnd() * .3, G); } }
+    const doorPatches = [];
+    for (let i = 0; i < 30; i++) { const z = -35 - rnd() * 11.5, f = clamp((-z - 35) / 11.5); if (rnd() > .3 + f) continue;
+      const x = (rnd() - .5) * 2 * (HW - .6), sz = 1 + rnd() * 1.6 + f * 1.2; if (COLS.some(([cx, cz]) => Math.hypot(x - cx, z - cz) < 1)) continue;
+      doorPatches.push([x, z, sz * .36]); G.moss.push({ p: new THREE.Vector3(x, .003, z), n: UPV, s: sz, birth: lerp(5.0, 6.0, f) }); }
+    meadow(-HW + .2, HW - .2, -34, -46.8, LOW ? 1600 : 3200, (x, z) => lerp(5.3, 6.3, clamp((-z - 35) / 11.5)), blades, heads, (x, z) => doorPatches.some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r));
+    const oBlades = [], oHeads = []; meadow(-22, 22, -47.3, -90, LOW ? 3500 : 8000, () => -9, oBlades, oHeads);
+    oBlades.forEach(b => { b.s *= 1.5; }); oHeads.forEach(h => { h.p.y *= 1.5; h.s *= 1.3; });
+    plantLater(hall, () => [...greenery(G), foliage(bladeGeo, bladeTex, blades, .9), foliage(headGeo, flowerTex, heads, .7),
+      foliage(bladeGeo, bladeTex, oBlades, .9, true), foliage(headGeo, flowerTex, oHeads, .7, true)]);
   };
 
   /* ---------- Lights ---------- */
-  const torch = new THREE.PointLight(0xff9a50, 0, 0, 2);
-  torch.castShadow = !LOW; torch.shadow.mapSize.set(1024, 1024); torch.shadow.camera.near = .08; torch.shadow.camera.far = 30; torch.shadow.bias = -.0006; torch.shadow.normalBias = .06;
-  scene.add(torch);
-  const moon = new THREE.AmbientLight(0x3a4458, .1);
-  const hemi = new THREE.HemisphereLight(0xfff2de, 0x2a241c, 0);
-  const sun = new THREE.DirectionalLight(0xfff4e0, 0); sun.position.set(0, 12, -80); sun.target.position.set(0, 1, -30);
+  // The pointer holds a shaft of sun, a spot from high on the left aimed where the pointer meets the stone. `torch`
+  // keeps its name and marks where the shaft lands, so the lens and the KJV line read it as before.
+  const torch = new THREE.Object3D(); scene.add(torch);
+  const beam = new THREE.SpotLight(0xffc68c, 0, 0, .13, .95, 0);
+  beam.castShadow = true; beam.shadow.autoUpdate = false; beam.shadow.mapSize.setScalar(LOW ? 1024 : 2048); beam.shadow.camera.near = 6; beam.shadow.camera.far = 30; beam.shadow.bias = -.0006; beam.shadow.normalBias = .06;
+  scene.add(beam, beam.target);
+  const BEAM_DIR = new THREE.Vector3(-.56, -.6, -.57).normalize();   // the way the shaft travels: down and to the left, across the wall at a slant
+  const moon = new THREE.AmbientLight(0x7487a8, .16);
+  const hemi = new THREE.HemisphereLight(0x8ea4c8, 0x3a3631, 0);
+  const sun = new THREE.DirectionalLight(0xfff4e0, 0);
+  sun.castShadow = true; sun.shadow.autoUpdate = false; sun.shadow.mapSize.setScalar(LOW ? 1024 : 2048); Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 160 }); sun.shadow.bias = -.0005; sun.shadow.normalBias = .08;
   scene.add(moon, hemi, sun, sun.target);
+  // As the day comes on, the sunlit stone lights the rest of the hall: a warm bounce that rises as you walk.
+  const bounce = new THREE.HemisphereLight(0xffdcb0, 0xa4835a, 0); scene.add(bounce);
+  // Near the end, daylight from the meadow comes in through the far door (and only the door: the far wall casts shadows)
+  // and runs along the floor toward you.
+  const doorLight = new THREE.SpotLight(0xfff0d4, 0, 0, .5, .6, 0);
+  doorLight.position.set(0, 5.2, -66); doorLight.target.position.set(0, 0, -30);
+  doorLight.castShadow = true; doorLight.shadow.autoUpdate = false; doorLight.shadow.mapSize.setScalar(LOW ? 512 : 1024); doorLight.shadow.camera.near = 8; doorLight.shadow.camera.far = 70; doorLight.shadow.bias = -.0006; doorLight.shadow.normalBias = .05;
+  scene.add(doorLight, doorLight.target);
+  const dawnSun = new THREE.Color(0xffbf8f), noonSun = new THREE.Color(0xfff0d8), dawnFog = new THREE.Color(0x2b3546), lateFog = new THREE.Color(0x56627a), dawnSky = new THREE.Color(0x3f4f6c), daySky = new THREE.Color(0xa6bfd3), sunDir = new THREE.Vector3(), fwd = new THREE.Vector3(), focus = new THREE.Vector3();
+  // the shaft itself, faintly visible in the dawn air: a cone from high on the left down to where it lands
+  const shaftMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { k: { value: 0 } },
+    vertexShader: 'varying float vAlong; varying vec3 vN, vV; void main(){ vAlong = uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform float k; varying float vAlong; varying vec3 vN, vV; void main(){ float edge = pow(abs(dot(vN, vV)), 2.5); float along = smoothstep(0., .35, vAlong) * smoothstep(1., .55, vAlong); gl_FragColor = vec4(vec3(1., .9, .74) * edge * along * k, 1.); }', side: THREE.DoubleSide });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1, .04, 1, 48, 1, true).translate(0, -.5, 0).rotateX(-Math.PI / 2), shaftMat); shaft.frustumCulled = false; scene.add(shaft);
   // The flame: a hot core and a halo the bloom pass spreads, plus embers.
   const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,220,170,.85)'); g.addColorStop(.6, 'rgba(255,140,60,.25)'); g.addColorStop(1, 'rgba(255,120,40,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const spriteMat = (c, o) => new THREE.SpriteMaterial({ map: glowTex, color: c, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false });
@@ -426,18 +723,24 @@ onmessage = e => {
     const s = new THREE.Sprite(spriteMat(0xff9a4a, .6)); s.scale.setScalar(.34); s.position.copy(l.position); scene.add(s);
     return { l, s, phase: i * 1.7, side };
   });
-  const EN = ww.rm ? 0 : (LOW ? 36 : 72);
+  const EN = ww.rm ? 0 : (LOW ? 60 : 160);
   const ePos = new Float32Array(EN * 3), eCol = new Float32Array(EN * 3), eVel = new Float32Array(EN * 3), eAge = new Float32Array(EN).fill(9), eLife = new Float32Array(EN).fill(1);
   const eGeo = new THREE.BufferGeometry(); eGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3)); eGeo.setAttribute('color', new THREE.BufferAttribute(eCol, 3));
-  const embers = new THREE.Points(eGeo, new THREE.PointsMaterial({ size: .045, map: glowTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false }));
+  const embers = new THREE.Points(eGeo, new THREE.PointsMaterial({ size: .026, map: glowTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   embers.frustumCulled = false; scene.add(embers);
 
   /* ---------- Post ---------- */
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .55, .5, .88);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .3, .45, .9);
   composer.addPass(bloom); composer.addPass(new OutputPass());
-  if (LOW) composer.setPixelRatio(1);
+  // The teaser's print, lightly: lifted blacks, a soft vignette and moving grain.
+  const film = new ShaderPass({ uniforms: { tDiffuse: { value: null }, t: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+    fragmentShader: 'uniform sampler2D tDiffuse; uniform float t; varying vec2 vUv; float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + t * 7.) * 43758.5453); } void main(){ vec4 c = texture2D(tDiffuse, vUv); vec2 q = vUv - .5; c.rgb = mix(vec3(.075, .07, .062), c.rgb, .94) * (1. - dot(q, q) * .6) ; float l = dot(c.rgb, vec3(.299, .587, .114)); c.rgb += (h(vUv * 1000.) - .5) * .028 * smoothstep(.04, .4, l); gl_FragColor = c; }' });
+  composer.addPass(film);
+  composer.setPixelRatio(pr);
+  const setPR = v => { pr = v; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); };
 
   /* ---------- The walk: camera stations, keyed to scroll progress (in screens) ---------- */
   let keys = [];
@@ -457,7 +760,7 @@ onmessage = e => {
       { p: 3.95, pos: [-sx * 1.1, 2.45, -14], look: [-sx * .5, 2.6, -28] },
       { p: 5.25, pos: [0, 2.5, -21], look: [0, 2.8, -36] },
       { p: 5.85, pos: [0, 2.6, -25.5], look: [0, 2.9, -38] },
-      { p: 7.0, pos: [0, 2.75, -37.5], look: [0, 3.25, -52] },   // the walk ends at the threshold: the far door frames the daylight
+      { p: 7.0, pos: [0, 2.1, -38.5], look: [0, 3.1, -52] },   // the walk ends at the threshold: the far door frames the daylight
     ].map(k => ({ p: k.p, pos: new THREE.Vector3(...k.pos), look: new THREE.Vector3(...k.look) }));
   };
   const posCurve = () => new THREE.CatmullRomCurve3(keys.map(k => k.pos), false, 'centripetal');
@@ -475,7 +778,7 @@ onmessage = e => {
     const [pa, la] = anchors[i], [pb, lb] = anchors[i + 1], t = pc.getUtoTmapping(0, lerp(la, lb, clamp((p - pa) / (pb - pa))));
     pc.getPoint(t, out); lc.getPoint(t, look);
   };
-  const rebuild = () => { buildHall(); buildTablet(); keys = makeKeys(); pc = posCurve(); lc = lookCurve(); pathAnchors(); };
+  const rebuild = () => { shadowsStale = true; buildHall(); buildTablet(); keys = makeKeys(); pc = posCurve(); lc = lookCurve(); pathAnchors(); };
   mark('geometry'); rebuild(); mark('tablet');
 
   /* ---------- The KJV line: the light on a gilded word lights the matching "Word" (styles.css reads --g0..2) ---------- */
@@ -489,11 +792,12 @@ onmessage = e => {
   const skipIntro = ww.p > .05 || ww.rm;
   let sized = innerWidth + 'x' + innerHeight, start = performance.now(), last = start, rmStation = -1, rmFade = 1, firstFrame = true, afterOpening = false;
   const RM_STOPS = [0, 1.05, 2.6, 3.95, 5.25, 7.0];
+  const lastBeam = new THREE.Vector3(); let lastP = -1, frameNo = 0, emaMs = 16.7, slowFor = 0, fastFor = 0;
   const frame = now => {
     requestAnimationFrame(frame);
     if (document.hidden || !innerWidth || !innerHeight) return;   // hidden, or laid out at zero size: nothing to draw
     if (sized !== innerWidth + 'x' + innerHeight) fit();   // a resize (or a page first laid out at zero size) rebuilds the walk
-    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    const frameMs = now - last, dt = Math.min(.05, frameMs / 1000); last = now;
     if (firstFrame) start = last = now;   // the opening is timed from the first frame drawn, so a slow first compile never eats it
     const t = (now - start) / 1000, p = ww.p;
     const tall = camera.aspect < .95;
@@ -527,66 +831,90 @@ onmessage = e => {
     const par = ww.rm ? 0 : (1 - day) * .32 * Math.min(1, camera.aspect);   // less sway on narrow screens
     camera.position.addScaledVector(right, sp.x * par).addScaledVector(up, sp.y * par * .6);
     camera.lookAt(camLook); camera.updateMatrixWorld();
-    // The torch: on the wall it is held a hand's length from the stone; in the hall it is carried ahead.
+    // The shaft of sun: on the wall it lands where the pointer meets the stone; in the hall it fades, and the risen sun takes over.
     ndc.set(sp.x, sp.y); ray.setFromCamera(ndc, camera); dir.copy(ray.ray.direction);
     const onWall = 1 - smooth(1.35, 2.25, cp);
     tHall.copy(camera.position).addScaledVector(dir, 2.4).addScaledVector(up, -.15);
-    if (onWall > 0 && camera.position.z > 1.6 && dir.z < -.05) { tWall.copy(ray.ray.origin).addScaledVector(dir, (1.15 - ray.ray.origin.z) / dir.z); tHall.lerp(tWall, onWall); }
-    const flick = ww.rm ? 1 : .86 + .07 * Math.sin(t * 9.1) + .05 * Math.sin(t * 17.3 + 1.7) + .04 * Math.sin(t * 29.9 + .4) + .03 * (Math.random() - .5);
-    // The opening: a moment of only the gilded words in the dark, then the torch catches with a brief flare.
-    const lit = skipIntro ? 1 : smooth(1.25, 2.4, t) * (1 + .3 * Math.max(0, 1 - Math.abs(t - 1.75) / .5));
+    if (onWall > 0 && camera.position.z > 1.6 && dir.z < -.05) { tWall.copy(ray.ray.origin).addScaledVector(dir, (.02 - ray.ray.origin.z) / dir.z); tHall.lerp(tWall, onWall); }
+    const lit = skipIntro ? 1 : smooth(1.25, 2.4, t) * (1 + .3 * Math.max(0, 1 - Math.abs(t - 1.75) / .5));   // the shaft breaks through
     const ignite = skipIntro ? 0 : Math.max(0, 1 - Math.abs(t - 1.65) / .5);
-    const stride = torch.position.distanceTo(tHall);   // how far the flame moved this frame: embers only rise from a held flame, and die once it has gone on
-    torch.position.copy(tHall); if (!ww.rm) torch.position.x += Math.sin(t * 13.7) * .012, torch.position.y += Math.sin(t * 11.1) * .015;
-    torch.intensity = lerp(6.5, tall ? 20 : 14, 1 - onWall) * flick * lit * (1 - .9 * day);
-    halo.position.copy(torch.position); core.position.copy(torch.position);
-    const inHallLight = smooth(1.2, 2.0, cp) * (1 - day);
-    sconces.forEach(sc => { const f = ww.rm ? 1 : .8 + .12 * Math.sin(t * 7.3 + sc.phase) + .08 * Math.sin(t * 13.1 + sc.phase * 2); sc.l.intensity = (tall ? 7.5 : 14) * f * inHallLight; sc.s.material.opacity = .55 * f * inHallLight; sc.s.visible = inHallLight > .01; });
-    const carried = 1 - onWall, reading = html.classList.contains('reading') ? .25 : 1;   // carried down the hall, the flame is close: smaller and softer; over the words it steps back further
-    halo.material.opacity = lerp(.8, .4, carried) * reading * lit * (1 - day) * (.9 + .1 * flick); core.material.opacity = lerp(1, .6, carried) * (reading < 1 ? .45 : 1) * lit * (1 - day);
-    halo.scale.setScalar((lerp(.5, .2, carried) + .05 * flick) * (reading < 1 ? .5 : 1)); core.scale.setScalar(lerp(.16, .07, carried));
-    // Embers rise from the flame.
+    torch.position.copy(tHall);
+    beam.target.position.copy(tHall); beam.position.copy(tHall).addScaledVector(BEAM_DIR, -16); beam.intensity = 6.5 * lit * onWall;
+    shaft.position.copy(tHall); shaft.lookAt(tmpV.copy(tHall).sub(BEAM_DIR)); shaft.scale.set(16 * Math.tan(.13), 16 * Math.tan(.13), 16); shaftMat.uniforms.k.value = .055 * lit * onWall;
+    halo.visible = core.visible = false; sconces.forEach(sc => { sc.l.intensity = 0; sc.s.visible = false; });
+    const reading = html.classList.contains('reading') ? .25 : 1;
+    camera.getWorldDirection(fwd);
+    // Dawn, advancing as you walk: the sun clears the left-hand wall and its shafts come down through the roof, low and long
+    // at first, then higher and shorter, the stripes on the floor sliding as it climbs. It never lights the entrance wall.
+    const out = smooth(5.6, 7, p), rise = smooth(1.8, 6.8, p), sunK = smooth(1.4, 3.0, p);
+    sunDir.set(1, -lerp(.3, .72, rise), lerp(.06, .03, rise)).normalize();
+    focus.set(0, 3, -24); sun.target.position.copy(focus); sun.position.copy(focus).addScaledVector(sunDir, -60);   // fixed on the hall, so its shadow never chases the camera
+    sun.color.copy(dawnSun).lerp(noonSun, smooth(2, 6.8, p)); sun.intensity = lerp(1.9, 2.8, rise) * sunK + .8 * out;
+    shaftU.sun.value.copy(sunDir); shaftU.k.value = (LOW ? .05 : .027) * sunK * (1 - .5 * out); shaftU.col.value.copy(sun.color); shaftU.t.value = t;
+    // Dust: on the wall it turns in the first shaft; in the hall it fills the air, and shows only where it crosses the sun.
     for (let i = 0; i < EN; i++) {
       eAge[i] += dt;
-      if (eAge[i] < eLife[i] && (ePos[i * 3] - torch.position.x) ** 2 + (ePos[i * 3 + 1] - torch.position.y) ** 2 + (ePos[i * 3 + 2] - torch.position.z) ** 2 > 2.6) eAge[i] = 9;
-      if (eAge[i] > eLife[i] && lit > .5 && day < .6 && stride < .05 && reading === 1 && Math.random() < dt * 22) {   // none rise across the words
-        eAge[i] = 0; eLife[i] = 1 + Math.random() * 1.6;
-        ePos[i * 3] = torch.position.x + (Math.random() - .5) * .08; ePos[i * 3 + 1] = torch.position.y + .04; ePos[i * 3 + 2] = torch.position.z + (Math.random() - .5) * .08;
-        eVel[i * 3] = (Math.random() - .5) * .18; eVel[i * 3 + 1] = .3 + Math.random() * .45; eVel[i * 3 + 2] = (Math.random() - .5) * .12;
+      if (eAge[i] > eLife[i] && lit > .5 && Math.random() < dt * 10) {
+        eAge[i] = 0; eLife[i] = 4 + Math.random() * 5;
+        if (onWall > .5) { const k = .3 + Math.random() * 7, r = .15 + k * .12; tmpV.copy(tHall).addScaledVector(BEAM_DIR, -k); ePos[i * 3] = tmpV.x + (Math.random() - .5) * r; ePos[i * 3 + 1] = tmpV.y + (Math.random() - .5) * r; ePos[i * 3 + 2] = tmpV.z + Math.random() * r; }
+        else { tmpV.copy(camera.position).addScaledVector(fwd, 1.5 + Math.random() * 10).addScaledVector(right, (Math.random() - .5) * 9).addScaledVector(up, (Math.random() - .4) * 5); ePos[i * 3] = tmpV.x; ePos[i * 3 + 1] = clamp(tmpV.y, .3, 6.8); ePos[i * 3 + 2] = tmpV.z; }
+        eVel[i * 3] = (Math.random() - .5) * .04; eVel[i * 3 + 1] = (Math.random() - .35) * .03; eVel[i * 3 + 2] = (Math.random() - .5) * .04;
       }
-      const a = eAge[i] / eLife[i], k = a >= 1 ? 0 : Math.pow(1 - a, 1.4) * Math.min(1, eAge[i] / .12);
-      ePos[i * 3] += (eVel[i * 3] + Math.sin(t * 3 + i) * .05) * dt; ePos[i * 3 + 1] += eVel[i * 3 + 1] * dt; ePos[i * 3 + 2] += eVel[i * 3 + 2] * dt;
-      eCol[i * 3] = 1 * k; eCol[i * 3 + 1] = .55 * k; eCol[i * 3 + 2] = .22 * k;
+      ePos[i * 3] += (eVel[i * 3] + Math.sin(t * .6 + i) * .015) * dt; ePos[i * 3 + 1] += eVel[i * 3 + 1] * dt; ePos[i * 3 + 2] += eVel[i * 3 + 2] * dt;
+      const a = eAge[i] / eLife[i], life = a >= 1 ? 0 : Math.sin(Math.PI * a);
+      const k = life * (onWall > .5 ? .35 : .5 * sunK * litAt(ePos[i * 3], ePos[i * 3 + 1], ePos[i * 3 + 2], sunDir));
+      eCol[i * 3] = k; eCol[i * 3 + 1] = .9 * k; eCol[i * 3 + 2] = .74 * k;
     }
     if (EN) { eGeo.attributes.position.needsUpdate = true; eGeo.attributes.color.needsUpdate = true; }
     // The lens follows the light on the wall: where its beam meets the tablet (in the tablet's uv), any gilded word it rests on
     // turns to WORD, written in over about a third of a second, and back again once the light moves on.
-    let hu = -9, hv = -9;
-    if (onWall * lit > .5 && camera.position.z > 1.6 && dir.z < -.05) { const h = (.016 - ray.ray.origin.z) / dir.z; hu = (ray.ray.origin.x + dir.x * h) / L.FW + .5; hv = (ray.ray.origin.y + dir.y * h - L.cy) / L.FH + .5; }
+    // The lens follows the beam: every gilded word the shaft of light falls on turns to WORD, written in over about a third of
+    // a second, and back again once the light moves on. A word counts as lit when its middle or either end is inside the cone.
+    const coneIn = Math.cos(.13 * .7), coneOut = Math.cos(.13 * 1.05);
+    const lightAt = (x, y) => (onWall * lit > .5 ? smooth(coneOut, coneIn, tmpV.set(x, y, .016).sub(beam.position).normalize().dot(BEAM_DIR)) : 0);
     const ease = ww.rm ? 1 : Math.min(1, dt * 7), wordW = lens.wordW.value;
-    lens.rects.value.forEach((r, i) => {   // on while the light is within the word, or just above or below it
-      const on = ((hu - (r.x + r.z) / 2) / ((r.z - r.x) / 2)) ** 2 + ((hv - (r.y + r.w) / 2) / ((r.w - r.y) * .8)) ** 2 < 1 ? 1 : 0;
+    lens.rects.value.forEach((r, i) => {
+      const y = ((r.y + r.w) / 2 - .5) * L.FH + L.cy, x0 = (r.x - .5) * L.FW, x1 = (r.z - .5) * L.FW;
+      const on = Math.max(lightAt((x0 + x1) / 2, y), lightAt(x0 + (x1 - x0) * .2, y), lightAt(x1 - (x1 - x0) * .2, y)) > .5 ? 1 : 0;
       wordW[i] = Math.abs(on - wordW[i]) < .004 ? on : wordW[i] + (on - wordW[i]) * ease;
     });
     // Once the KJV line is on screen, the light on a gilded word picks out the matching "Word" in it.
     const kjvOn = smooth(.55, .95, cp);
     for (let i = 0; i < 3; i++) {
-      const b = logosBoxes[i], reach = b && onWall > .01 ? smooth(1.9, .55, Math.hypot(torch.position.x - b.x, torch.position.y - b.y)) * onWall * lit : 0, g = Math.round(reach * kjvOn * 1000) / 1000;
+      const b = logosBoxes[i], reach = b ? lightAt(b.x, b.y) : 0, g = Math.round(reach * kjvOn * 1000) / 1000;
       if (g !== gLast[i]) { gLast[i] = g; html.style.setProperty('--g' + i, String(g)); }
     }
-    // Night into day.
-    moon.intensity = .1 * (1 - day);
-    goldMat.envMapIntensity = lerp(skipIntro ? .17 : lerp(.26, .17, smooth(1.2, 3, t)), .7, day);
-    hemi.intensity = lerp(0, 1.4, day); sun.intensity = lerp(0, 2.0, day);
-    fog.color.copy(night).lerp(daylight, day); fog.density = lerp(.05, .012, day);
-    scene.background.copy(fog.color);
-    const dawn = smooth(5.6, 6.9, p), glimmer = tall ? .004 : .006 + .005 * smooth(2.4, 4.2, p) * (1 - .8 * smooth(4.4, 4.9, p)), portal = lerp(glimmer, 1.75, dawn);
-    // barely a glow at night, held back wherever the words would sit over it (all of the hall on tall screens), full daylight at the end
-    dayMat.color.setRGB(portal, portal * lerp(.78, .965, dawn), portal * lerp(.52, .9, dawn));
-    const crown = portal * lerp(1, 1.7, dawn); doorMat.color.setRGB(crown, crown * lerp(.78, .965, dawn), crown * lerp(.52, .9, dawn));
-    bloom.strength = lerp(.55, .1, day) + ignite * .9;
-    composer.render();
-    if (firstFrame) { firstFrame = false; html.classList.add('lit'); mark('first-frame'); }
+    // The hall's air stays blue and dim behind the sun; past the door it is day.
+    const climb = smooth(0, 7, p);
+    const dawnUp = lerp(.22, 1, Math.min(1, lit));   // the opening: a moment of only the gold words in the blue dark, then the dawn comes up with the light
+    hemi.intensity = (lerp(.62, .9, smooth(0, 6, p)) + .5 * out) * dawnUp; moon.intensity = .16 * (1 - out) * dawnUp;
+    const doorGlow = lerp(.16, 1, smooth(1.1, 2.3, p));   // the far door is only a glimmer until you are through the entrance arch
+    daylit.forEach(([m, c]) => m.color.copy(c).multiplyScalar(doorGlow));
+    bounce.intensity = .62 * Math.pow(smooth(2.2, 7, p), 1.4); doorLight.intensity = 3.2 * smooth(4.4, 6.8, p);
+    goldMat.envMapIntensity = lerp(.26, .7, out);
+    fog.color.copy(dawnFog).lerp(lateFog, smooth(0, 5.6, p)).lerp(daylight, out * .5); fog.density = lerp(.032, .014, climb);
+    scene.background.copy(dawnSky).lerp(daySky, rise * rise); skyDay.value = smooth(4.5, 7, p);   // seen through the roof
+    grow.value = p + .1;
+    bloom.strength = .3 + ignite * .5;
+    film.uniforms.t.value = t % 10;
+    // Shadow maps redraw only when something they depend on changes: the walk (sun angle, growth), the beam moving on the wall,
+    // new plants, a rebuild. Standing still, none of the three redraws.
+    const pMoved = Math.abs(p - lastP) > 1e-4, beamMoved = beam.intensity > 0 && tHall.distanceToSquared(lastBeam) > 1e-6;
+    if (pMoved || shadowsStale) { sun.shadow.needsUpdate = sun.intensity > 0; doorLight.shadow.needsUpdate = doorLight.intensity > 0; }
+    if (beamMoved || pMoved || shadowsStale) beam.shadow.needsUpdate = beam.intensity > 0;
+    shadowsStale = false; lastBeam.copy(tHall);
+    // Idle: with nothing moving (no walk, no pointer for a moment, no word changing, opening done) draw every other frame;
+    // the dust and grain still drift, at half the cost. The governor only reads frames drawn back to back.
+    const settling = lens.wordW.value.some(w => w > .002 && w < .998), moving = pMoved || (now - ww.pointer.moved) < 1500 || t < 7.5 || settling || rmFade < 1;
+    lastP = p; frameNo++;
+    if (moving) {
+      if (!firstFrame && frameMs < 250) { emaMs = lerp(emaMs, frameMs, .08);
+        if (emaMs > 20.5) { fastFor = 0; if ((slowFor += frameMs) > 900 && pr > PR_MIN) { setPR(Math.max(PR_MIN, Math.round((pr - .15) * 100) / 100)); slowFor = 0; emaMs = 16.7; } }
+        else if (emaMs < 14.5) { slowFor = 0; if ((fastFor += frameMs) > 4000 && pr < PR_MAX) { setPR(Math.min(PR_MAX, Math.round((pr + .1) * 100) / 100)); fastFor = 0; } }
+        else slowFor = fastFor = 0; }
+      composer.render();
+    } else if (frameNo % 2 === 0) composer.render();
+    if (firstFrame) { firstFrame = false; html.classList.add('lit'); mark('first-frame'); firstDrawn = true; setTimeout(() => plantQueue.splice(0).forEach(f => f()), 30); }
     // Once the opening has played (or was skipped), finish the heavy work the first frame did not need.
     if (!afterOpening && (skipIntro ? t > .4 : t > 6.4)) { afterOpening = true; upgradeCarve(); }
   };
@@ -597,6 +925,6 @@ onmessage = e => {
     const before = layoutKey; rebuild(); if (layoutKey !== before && afterOpening) upgradeCarve();
   };
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); html.classList.add('scene-failed'); });
-  window.__scene = { scene, camera, renderer, torch, sun, hemi, bloom, panelMat, goldMat, lens, marks };   // inspection handle for review tooling
+  window.__scene = { scene, camera, renderer, composer, pr: () => pr, torch, sun, hemi, bloom, panelMat, goldMat, lens, marks };   // inspection handle for review tooling
   requestAnimationFrame(frame);
 }

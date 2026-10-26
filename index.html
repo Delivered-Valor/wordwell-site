@@ -6,7 +6,7 @@
 <title>WordWell Bible · An interlinear Bible for iPhone</title>
 <meta name="description" content="An iPhone Bible with the Greek and Hebrew beneath every verse. Tap any word for its dictionary entries, read commentary beside the text. Offline, with no account.">
 <link rel="canonical" href="https://wordwellbible.com/">
-<meta name="theme-color" content="#0b0907">
+<meta name="theme-color" content="#0d1118">
 <meta name="application-name" content="WordWell Bible">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="WordWell Bible">
@@ -30,7 +30,7 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=Noto+Serif+Hebrew:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
-<script>document.documentElement.classList.add('js')</script>
+<script>document.documentElement.classList.add('js'); if (window.WebGLRenderingContext && !/[?&]static\b/.test(location.search)) document.documentElement.classList.add('pre-stage');</script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
@@ -40,6 +40,8 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/RenderPass.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
@@ -78,7 +80,7 @@
     <div class="intro">
       <h1>The word beneath the word.</h1>
       <p class="lede">An iPhone Bible that shows you the words the writers actually used, with the Greek and Hebrew right beneath the English. It works offline, with no account.</p>
-      <p class="hint" data-hint>Move your light across the stone.</p>
+      <p class="hint" data-hint>Move the first light across the stone.</p>
     </div>
   </section>
 
@@ -154,7 +156,7 @@
   </section>
 
   <!-- 5 · Out into the daylight -->
-  <section class="st st-iphone" id="iphone" data-in="6.15" data-out="99">
+  <section class="st st-iphone" id="iphone" data-in="6.45" data-out="99">
     <h2>WordWell Bible is coming to iPhone.</h2>
     <form class="notify" data-notify novalidate>
       <label class="sr-only" for="email">Email address</label>
