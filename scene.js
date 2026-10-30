@@ -788,10 +788,11 @@ onmessage = e => {
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
   const right = new THREE.Vector3(), up = new THREE.Vector3(), dir = new THREE.Vector3(), tWall = new THREE.Vector3(), tHall = new THREE.Vector3();
   const night = new THREE.Color(0x070605), daylight = new THREE.Color(0xf3efe6);
+  const parallax = { x: 0, y: 0 };
   const sp = { x: -.7, y: .3 };   // the torch's own (smoothed) aim, in screen units
   const skipIntro = ww.p > .05 || ww.rm;
   let sized = innerWidth + 'x' + innerHeight, start = performance.now(), last = start, rmStation = -1, rmFade = 1, firstFrame = true, afterOpening = false;
-  const RM_STOPS = [0, 1.05, 2.6, 3.95, 5.25, 7.0];
+  const RM_STOPS = [0, 1.05, 2.6, 3.95, 5.25, 6.75];
   const lastBeam = new THREE.Vector3(); let lastP = -1, frameNo = 0, emaMs = 16.7, slowFor = 0, fastFor = 0;
   const frame = now => {
     requestAnimationFrame(frame);
@@ -814,7 +815,7 @@ onmessage = e => {
       ay = lerp(.2 * Math.sin(tt * .53 + 1) + (tall ? .32 : .28), lift + .08 * Math.sin(tt * .57 + 1), inHall);
     }
     const follow = ww.rm ? .2 : .085; sp.x = lerp(sp.x, ax, follow); sp.y = lerp(sp.y, ay, follow);
-    // Camera: the station for this scroll position, plus a little parallax toward the light.
+    // Camera: the existing walk, with a bounded drag offset that settles on release.
     const day = smooth(5.6, 6.9, p);
     let cp = p;
     if (ww.rm) {   // no travel: cut between stations through a dip to dark
@@ -826,10 +827,15 @@ onmessage = e => {
       canvas.style.opacity = rmFade.toFixed(3);
     }
     station(cp, camPos, camLook);
+    // Only the final phone approach moves closer. Earlier stops and the distance-mapped path stay intact.
+    if (tall) camPos.z -= 1.6 * smooth(5.85, 6.75, cp);
     camera.position.copy(camPos); camera.lookAt(camLook); camera.updateMatrixWorld();
     right.setFromMatrixColumn(camera.matrixWorld, 0); up.setFromMatrixColumn(camera.matrixWorld, 1);
-    const par = ww.rm ? 0 : (1 - day) * .32 * Math.min(1, camera.aspect);   // less sway on narrow screens
-    camera.position.addScaledVector(right, sp.x * par).addScaledVector(up, sp.y * par * .6);
+    const followDrag = 1 - Math.exp(-dt * 8);
+    parallax.x = ww.rm ? 0 : lerp(parallax.x, ww.parallax.x, followDrag);
+    parallax.y = ww.rm ? 0 : lerp(parallax.y, ww.parallax.y, followDrag);
+    const par = .24 * Math.min(1, camera.aspect);   // less displacement on narrow screens
+    camera.position.addScaledVector(right, parallax.x * par).addScaledVector(up, parallax.y * par * .6);
     camera.lookAt(camLook); camera.updateMatrixWorld();
     // The shaft of sun: on the wall it lands where the pointer meets the stone; in the hall it fades, and the risen sun takes over.
     ndc.set(sp.x, sp.y); ray.setFromCamera(ndc, camera); dir.copy(ray.ray.direction);
@@ -905,7 +911,9 @@ onmessage = e => {
     shadowsStale = false; lastBeam.copy(tHall);
     // Idle: with nothing moving (no walk, no pointer for a moment, no word changing, opening done) draw every other frame;
     // the dust and grain still drift, at half the cost. The governor only reads frames drawn back to back.
-    const settling = lens.wordW.value.some(w => w > .002 && w < .998), moving = pMoved || (now - ww.pointer.moved) < 1500 || t < 7.5 || settling || rmFade < 1;
+    const settling = lens.wordW.value.some(w => w > .002 && w < .998);
+    const dragSettling = Math.abs(parallax.x - ww.parallax.x) + Math.abs(parallax.y - ww.parallax.y) > .001;
+    const moving = dragSettling || pMoved || (now - ww.pointer.moved) < 1500 || t < 7.5 || settling || rmFade < 1;
     lastP = p; frameNo++;
     if (moving) {
       if (!firstFrame && frameMs < 250) { emaMs = lerp(emaMs, frameMs, .08);
@@ -925,6 +933,6 @@ onmessage = e => {
     const before = layoutKey; rebuild(); if (layoutKey !== before && afterOpening) upgradeCarve();
   };
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); html.classList.add('scene-failed'); });
-  window.__scene = { scene, camera, renderer, composer, pr: () => pr, torch, sun, hemi, bloom, panelMat, goldMat, lens, marks };   // inspection handle for review tooling
+  window.__scene = { scene, camera, renderer, composer, parallax, pr: () => pr, torch, sun, hemi, bloom, panelMat, goldMat, lens, marks };   // inspection handle for review tooling
   requestAnimationFrame(frame);
 }

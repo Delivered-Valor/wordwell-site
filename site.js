@@ -61,7 +61,7 @@
   const RM = matchMedia('(prefers-reduced-motion: reduce)').matches || params.has('rm');
   const touch = matchMedia('(hover: none)').matches;
   const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
-  const ww = window.__ww = { p: 0, rm: RM, touch, pointer: { x: 0, y: 0, moved: 0 }, END: 7 };
+  const ww = window.__ww = { p: 0, rm: RM, touch, pointer: { x: 0, y: 0, moved: 0 }, parallax: { x: 0, y: 0 }, END: 7 };
 
   /* ---------- Tap a word: a Verse View row opens its entry in Word Detail ---------- */
   // The seven words of John 1:1 as the pipeline keys them (SBLGNT occurrences to Strong's Greek, CC0). Definitions are the
@@ -94,6 +94,58 @@
   html.style.setProperty('--track', String(ww.END + 1));
   if (touch) { const h = $('[data-hint]'); if (h) h.textContent = 'Touch the stone to light it.'; }
 
+  /* ---------- The final copy can scroll at enlarged browser text sizes ---------- */
+  const finalScene = $('.st-iphone'), finalCopy = document.createElement('div');
+  finalCopy.className = 'final-copy';
+  finalCopy.dataset.finalScroll = '';
+  finalCopy.tabIndex = -1;
+  // display:contents preserves the normal layout; only overflowing copy becomes a bounded scroll region.
+  finalCopy.append(...finalScene.children);
+  finalScene.append(finalCopy);
+  const updateFinalScroll = () => {
+    const content = [...finalCopy.children].filter(el => !el.classList.contains('foot'));
+    const height = content.reduce((sum, el) => {
+      const style = getComputedStyle(el);
+      return sum + el.scrollHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+    }, 0);
+    const scrolling = height > innerHeight * .62 || $('.foot', finalCopy).scrollHeight > innerHeight * .25;
+    finalCopy.classList.toggle('is-scrollable', scrolling);
+    finalCopy.tabIndex = scrolling ? 0 : -1;
+    if (scrolling) { finalCopy.setAttribute('role', 'region'); finalCopy.setAttribute('aria-label', 'WordWell Bible launch'); }
+    else { finalCopy.removeAttribute('role'); finalCopy.removeAttribute('aria-label'); finalCopy.scrollTop = 0; }
+  };
+  const finalObserver = new ResizeObserver(updateFinalScroll);
+  [...finalCopy.children].forEach(el => finalObserver.observe(el));
+  addEventListener('resize', updateFinalScroll, { passive: true });
+  document.fonts.ready.then(updateFinalScroll);
+  /* ---------- Keep every fact and the Plus copy between the header and Next ---------- */
+  const about = $('.st-about'), aboutCopy = document.createElement('div');
+  aboutCopy.className = 'about-copy';
+  aboutCopy.dataset.aboutScroll = '';
+  // Keep the section's oversized shade outside the native copy scroll extent.
+  aboutCopy.append(...about.children);
+  about.append(aboutCopy);
+  const updateAboutScroll = () => {
+    const top = $('.bar').getBoundingClientRect().bottom + 12;
+    const bottom = $('[data-next-wrap]').getBoundingClientRect().top - 22;
+    const height = [...aboutCopy.children].reduce((sum, el) => {
+      const style = getComputedStyle(el);
+      return sum + el.scrollHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+    }, 0);
+    const scrolling = height + 12 > bottom - top;
+    about.style.setProperty('--copy-top', `${top}px`);
+    about.style.setProperty('--copy-bottom', `${innerHeight - bottom}px`);
+    about.classList.toggle('has-copy-scroll', scrolling);
+    aboutCopy.classList.toggle('is-scrollable', scrolling);
+    if (scrolling) { aboutCopy.tabIndex = 0; aboutCopy.setAttribute('role', 'region'); aboutCopy.setAttribute('aria-label', 'What’s inside WordWell Bible'); }
+    else { aboutCopy.removeAttribute('tabindex'); aboutCopy.removeAttribute('role'); aboutCopy.removeAttribute('aria-label'); aboutCopy.scrollTop = 0; }
+  };
+  const aboutObserver = new ResizeObserver(updateAboutScroll);
+  [...aboutCopy.children, $('.bar'), $('[data-next-wrap]')].forEach(el => aboutObserver.observe(el));
+  addEventListener('resize', updateAboutScroll, { passive: true });
+  document.fonts.ready.then(updateAboutScroll);
+  const inCopyScroll = node => node instanceof Element && !!node.closest('[data-final-scroll].is-scrollable, [data-about-scroll].is-scrollable');
+
   /* ---------- Pointer: the torch follows it ---------- */
   const glow = $('.torch-glow');
   const point = (x, y) => {
@@ -101,17 +153,36 @@
     html.classList.add('pointered');
     if (glow) glow.style.transform = `translate3d(${x}px,${y}px,0)`;
   };
-  // Over a block of words the flame steps back (scene.js dims it, styles.css hides its dot and returns the system pointer).
+  // Pointer capture keeps a touch's original target even over a control, so check the live hit too.
+  const controls = 'button, a, input, textarea, select, option, label, form, summary, [role="button"], [role="link"], [role="slider"], [role="switch"], [role="checkbox"], [role="textbox"], [contenteditable], [tabindex]';
+  const isControl = node => node instanceof Element && !!node.closest(controls);
+  const overControl = e => isControl(e.target) || isControl(document.elementFromPoint(e.clientX, e.clientY));
+  let drag = null;
+  const release = () => { drag = null; ww.parallax.x = ww.parallax.y = 0; };
+  addEventListener('pointerdown', e => {
+    if (!e.isPrimary || e.button !== 0) return;
+    drag = { id: e.pointerId, blocked: overControl(e), x: e.clientX, y: e.clientY };
+    if (!drag.blocked && e.pointerType !== 'mouse') point(e.clientX, e.clientY);
+  }, { passive: true });
   addEventListener('pointermove', e => {
-    if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
-    point(e.clientX, e.clientY);
+    if (!e.isPrimary || (drag && (drag.id !== e.pointerId || drag.blocked)) || overControl(e)) return;
+    if (e.pointerType === 'mouse' || e.pointerType === 'pen' || drag) point(e.clientX, e.clientY);
+    if (drag && !RM) {
+      // A short drag gives a small perspective shift; longer drags stay within the same bounds.
+      const span = Math.min(innerWidth, innerHeight) * .5;
+      ww.parallax.x = clamp((e.clientX - drag.x) / span, -1, 1);
+      ww.parallax.y = clamp(-(e.clientY - drag.y) / span, -1, 1);
+    }
     html.classList.toggle('reading', e.target instanceof Element && !!e.target.closest('.st-verse, .st-word, .st-about'));
   }, { passive: true });
-  addEventListener('touchstart', e => { const t = e.touches[0]; if (t) point(t.clientX, t.clientY); }, { passive: true });
-  addEventListener('touchmove', e => { const t = e.touches[0]; if (t) point(t.clientX, t.clientY); }, { passive: true });
+  const endPointer = e => { if (drag && drag.id === e.pointerId) release(); };
+  addEventListener('pointerup', endPointer, { passive: true });
+  addEventListener('pointercancel', endPointer, { passive: true });
+  addEventListener('blur', release);
+  addEventListener('pointerout', e => { if (!e.relatedTarget) endPointer(e); }, { passive: true });
 
   /* ---------- Sections ---------- */
-  const sections = $$('.st').map(el => ({ el, a: +el.dataset.in, b: +el.dataset.out, kids: [...el.children].filter(k => !k.classList.contains('inscription')) }));
+  const sections = $$('.st').map(el => ({ el, a: +el.dataset.in, b: +el.dataset.out, kids: [...el.children].flatMap(k => k === finalCopy || k === aboutCopy ? [...k.children] : [k]).filter(k => !k.classList.contains('inscription')) }));
   const set = (n, o, y = 0) => { n.style.opacity = o; n.style.transform = RM || !y ? '' : `translate3d(0,${y}px,0)`; };
   const FADE = .3;
   const choreograph = p => {
@@ -183,7 +254,7 @@
   // and each burst walks one stop. Pinch-zoom (ctrl+wheel) is left to the browser.
   let wheelLast = 0, wheelSum = 0, wheelSpent = false;
   addEventListener('wheel', e => {
-    if (e.ctrlKey) return;
+    if (e.ctrlKey || inCopyScroll(e.target)) return;
     e.preventDefault();
     const now = performance.now();
     if (now - wheelLast > 220) { wheelSum = 0; wheelSpent = false; }
@@ -193,10 +264,11 @@
     if (Math.abs(wheelSum) > 30) { wheelSpent = true; advance(Math.sign(wheelSum)); }
   }, { passive: false });
   // Touch: a vertical swipe walks one stop; the page itself never drags. Pinches (two fingers) are left alone.
-  let swipeY = null, swipeX = 0;
-  addEventListener('touchstart', e => { if (e.touches.length === 1) { swipeY = e.touches[0].clientY; swipeX = e.touches[0].clientX; } else swipeY = null; }, { passive: true });
-  addEventListener('touchmove', e => { if (swipeY !== null && e.touches.length === 1 && e.cancelable) e.preventDefault(); }, { passive: false });
+  let swipeY = null, swipeX = 0, copySwipe = false;
+  addEventListener('touchstart', e => { copySwipe = inCopyScroll(e.target); if (copySwipe) { swipeY = null; return; } if (e.touches.length === 1) { swipeY = e.touches[0].clientY; swipeX = e.touches[0].clientX; } else swipeY = null; }, { passive: true });
+  addEventListener('touchmove', e => { if (copySwipe) return; if (swipeY !== null && e.touches.length === 1 && e.cancelable) e.preventDefault(); }, { passive: false });
   addEventListener('touchend', e => {
+    if (copySwipe) { copySwipe = false; swipeY = null; return; }
     if (swipeY === null) return;
     const t = e.changedTouches[0], dy = swipeY - t.clientY, dx = t.clientX - swipeX; swipeY = null;
     if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx)) advance(Math.sign(dy));
@@ -204,7 +276,7 @@
   // Keys: arrows, Page Up/Down and Space walk a stop; Home and End go to either end. Typing and pressed controls keep their keys.
   addEventListener('keydown', e => {
     if (e.altKey || e.ctrlKey || e.metaKey || !(e.target instanceof Element)) return;
-    if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+    if (inCopyScroll(e.target) || e.target.closest('input, textarea, select, [contenteditable]')) return;
     const k = e.key, onControl = !!e.target.closest('button, a');
     const down = k === 'ArrowDown' || k === 'PageDown' || (k === ' ' && !e.shiftKey && !onControl);
     const up = k === 'ArrowUp' || k === 'PageUp' || (k === ' ' && e.shiftKey && !onControl);
